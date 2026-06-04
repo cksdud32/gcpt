@@ -1,0 +1,602 @@
+[
+  {
+    "id": 1,
+    "parent": null,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.371Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "데이터베이스 스택 결정"
+      }
+    }
+  },
+  {
+    "id": 2,
+    "parent": 1,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.374Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "SQLite",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 3,
+    "parent": 2,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.374Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        2
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "PostgreSQL",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 PostgreSQL이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 4,
+    "parent": 3,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.374Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        3,
+        2
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "PostgreSQL",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 PostgreSQL이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 5,
+    "parent": 4,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.374Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        4
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "TiDB",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 TiDB이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 6,
+    "parent": 5,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.375Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        4
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "PostgreSQL"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  },
+  {
+    "id": 7,
+    "parent": 6,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.375Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "프레임워크 선택"
+      }
+    }
+  },
+  {
+    "id": 8,
+    "parent": 7,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.375Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Express.js",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 9,
+    "parent": 8,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.375Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        8
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Fastify",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Fastify이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 10,
+    "parent": 9,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        9,
+        8
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Fastify",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 Fastify이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 11,
+    "parent": 10,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        10
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Hono",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Hono이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 12,
+    "parent": 11,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        10
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Fastify"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  },
+  {
+    "id": 13,
+    "parent": 12,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "인증 방식 결정"
+      }
+    }
+  },
+  {
+    "id": 14,
+    "parent": 13,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "JWT",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 15,
+    "parent": 14,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        14
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Paseto",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Paseto이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 16,
+    "parent": 15,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        15,
+        14
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Session",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 Session이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 17,
+    "parent": 16,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.376Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        16
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Session+Redis",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Session+Redis이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 18,
+    "parent": 17,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        16
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Session"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  },
+  {
+    "id": 19,
+    "parent": 18,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "배포 환경 결정"
+      }
+    }
+  },
+  {
+    "id": 20,
+    "parent": 19,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "AWS EC2",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 21,
+    "parent": 20,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        20
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Fly.io",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Fly.io이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 22,
+    "parent": 21,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        21,
+        20
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vercel",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 Vercel이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 23,
+    "parent": 22,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        22
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Render",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Render이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 24,
+    "parent": 23,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        22
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Vercel"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  },
+  {
+    "id": 25,
+    "parent": 24,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "상태관리 라이브러리 선택"
+      }
+    }
+  },
+  {
+    "id": 26,
+    "parent": 25,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Redux",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 27,
+    "parent": 26,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        26
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Zustand",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Zustand이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 28,
+    "parent": 27,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        27,
+        26
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Zustand",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 Zustand이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 29,
+    "parent": 28,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        28
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Jotai",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Jotai이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 30,
+    "parent": 29,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        28
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Zustand"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  },
+  {
+    "id": 31,
+    "parent": 30,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "테스트 전략 수립"
+      }
+    }
+  },
+  {
+    "id": 32,
+    "parent": 31,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Jest",
+        "reason": "팀 경험 + 생태계 성숙도"
+      },
+      "rationale": "초기 단계에서 가장 안전한 선택"
+    }
+  },
+  {
+    "id": 33,
+    "parent": 32,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        32
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vitest",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Vitest이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 34,
+    "parent": 33,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        33,
+        32
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vitest",
+        "reason": "비용과 운영 부담 균형"
+      },
+      "rationale": "Claude 제안 검토 후 Vitest이 현재 팀에 더 적합"
+    }
+  },
+  {
+    "id": 35,
+    "parent": 34,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        34
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Playwright",
+        "reason": "장기 확장성과 보안 우선"
+      },
+      "rationale": "GPT 제안 대비 Playwright이 유지보수 측면에서 우위"
+    }
+  },
+  {
+    "id": 36,
+    "parent": 35,
+    "author": "user",
+    "timestamp": "2026-06-02T02:39:21.377Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        34
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Vitest"
+      },
+      "rationale": "Policy 기반 선택 (author: gpt)"
+    }
+  }
+]

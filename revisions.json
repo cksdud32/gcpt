@@ -1,0 +1,1053 @@
+[
+  {
+    "id": 1,
+    "parent": null,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.914Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "데이터베이스 기술 스택 결정"
+      },
+      "rationale": "프로젝트 초기 방향 설정"
+    }
+  },
+  {
+    "id": 2,
+    "parent": 1,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "SQLite",
+        "reason": "경량, 무설정, 프로토타입 최적"
+      },
+      "rationale": "초기 단계에서 복잡성 최소화"
+    }
+  },
+  {
+    "id": 3,
+    "parent": 2,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        2
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "PostgreSQL",
+        "reason": "확장성, 동시성, JSON 지원"
+      },
+      "rationale": "SQLite 동시성 한계 — 멀티 유저 시나리오에서 병목 가능"
+    }
+  },
+  {
+    "id": 4,
+    "parent": 3,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        2,
+        3
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "MySQL",
+        "reason": "팀 친숙도, 광범위한 호스팅 지원"
+      },
+      "rationale": "PostgreSQL보다 운영 비용이 낮을 수 있음"
+    }
+  },
+  {
+    "id": 5,
+    "parent": 4,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        2
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "SQLite"
+      },
+      "rationale": "현재 규모에서는 단순성 우선"
+    }
+  },
+  {
+    "id": 6,
+    "parent": 5,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        3,
+        4
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "PostgreSQL",
+        "reason": "향후 마이그레이션 비용 고려"
+      },
+      "rationale": "SQLite → PostgreSQL 마이그레이션은 스키마 변환 외 드라이버 교체 필요"
+    }
+  },
+  {
+    "id": 7,
+    "parent": 6,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        6
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "TiDB",
+        "reason": "MySQL 호환 + 수평 확장"
+      },
+      "rationale": "마이그레이션 우려를 해결하면서 MySQL 친숙도 유지 가능"
+    }
+  },
+  {
+    "id": 8,
+    "parent": 7,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "user_override",
+      "payload": {
+        "type": "user_override",
+        "goal": "데이터베이스 기술 스택 결정 (확정: SQLite 사용)"
+      },
+      "rationale": "프로토타입 단계에서 재논의 금지. SQLite로 확정."
+    }
+  },
+  {
+    "id": 9,
+    "parent": 8,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "백엔드 프레임워크 선택"
+      }
+    }
+  },
+  {
+    "id": 10,
+    "parent": 9,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Express.js",
+        "reason": "단순, 생태계 성숙, 팀 경험 있음"
+      },
+      "rationale": "검증된 선택. 러닝커브 없음."
+    }
+  },
+  {
+    "id": 11,
+    "parent": 10,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.917Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        10
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Fastify",
+        "reason": "Express 대비 3배 처리량, 스키마 기반 검증"
+      },
+      "rationale": "성능 민감한 엔드포인트가 있다면 Fastify가 유리"
+    }
+  },
+  {
+    "id": 12,
+    "parent": 11,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        10,
+        11
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "NestJS",
+        "reason": "구조화, DI, 대형 팀에 적합"
+      },
+      "rationale": "팀 규모 확장 시 유지보수성 우위"
+    }
+  },
+  {
+    "id": 13,
+    "parent": 12,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        11,
+        12
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Hono",
+        "reason": "엣지 런타임 지원, 초경량"
+      },
+      "rationale": "Cloudflare Workers 배포 고려 시 유일한 선택지"
+    }
+  },
+  {
+    "id": 14,
+    "parent": 13,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        10
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Express.js"
+      },
+      "rationale": "팀 경험 우선"
+    }
+  },
+  {
+    "id": 15,
+    "parent": 14,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "사용자 인증 방식 결정"
+      }
+    }
+  },
+  {
+    "id": 16,
+    "parent": 15,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "JWT",
+        "reason": "무상태, 확장성, 표준화"
+      },
+      "rationale": "서버 세션 불필요. 마이크로서비스 환경에서 유리."
+    }
+  },
+  {
+    "id": 17,
+    "parent": 16,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        16
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Session Cookie",
+        "reason": "무효화 용이, 보안 제어 강함"
+      },
+      "rationale": "JWT는 토큰 무효화가 어렵다. 강제 로그아웃 시나리오에서 취약."
+    }
+  },
+  {
+    "id": 18,
+    "parent": 17,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        16,
+        17
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "OAuth2 + JWT",
+        "reason": "소셜 로그인, 표준 위임 인증"
+      },
+      "rationale": "확장성과 소셜 연동 동시 해결"
+    }
+  },
+  {
+    "id": 19,
+    "parent": 18,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        17,
+        18
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Paseto",
+        "reason": "JWT보다 안전한 토큰 표준"
+      },
+      "rationale": "JWT의 알고리즘 혼동 공격 취약점 회피 가능"
+    }
+  },
+  {
+    "id": 20,
+    "parent": 19,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        18
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Auth0",
+        "reason": "관리형 인증, 빠른 구현"
+      },
+      "rationale": "인증을 직접 구현하지 않으면 보안 리스크 감소"
+    }
+  },
+  {
+    "id": 21,
+    "parent": 20,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        16
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "JWT"
+      },
+      "rationale": "현재 단순 구조에서 충분. 나중에 교체 가능."
+    }
+  },
+  {
+    "id": 22,
+    "parent": 21,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "user_override",
+      "payload": {
+        "type": "user_override",
+        "goal": "사용자 인증 방식 결정 (재검토)"
+      },
+      "rationale": "보안팀 피드백: JWT 무효화 문제 재검토 필요"
+    }
+  },
+  {
+    "id": 23,
+    "parent": 22,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        17
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Session Cookie"
+      },
+      "rationale": "보안팀 권고에 따라 Session Cookie로 변경"
+    }
+  },
+  {
+    "id": 24,
+    "parent": 23,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "배포 환경 및 인프라 결정"
+      }
+    }
+  },
+  {
+    "id": 25,
+    "parent": 24,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "AWS EC2",
+        "reason": "유연성, 팀 경험, 광범위한 문서"
+      },
+      "rationale": "가장 범용적인 선택"
+    }
+  },
+  {
+    "id": 26,
+    "parent": 25,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        25
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vercel + Railway",
+        "reason": "무설정 배포, 자동 스케일링"
+      },
+      "rationale": "EC2는 DevOps 리소스 필요. 소규모 팀엔 과도할 수 있음."
+    }
+  },
+  {
+    "id": 27,
+    "parent": 26,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        25,
+        26
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "AWS ECS + Fargate",
+        "reason": "컨테이너 기반, 서버리스 운영"
+      },
+      "rationale": "EC2 관리 부담 없이 AWS 생태계 유지"
+    }
+  },
+  {
+    "id": 28,
+    "parent": 27,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        26,
+        27
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Fly.io",
+        "reason": "글로벌 엣지, 간편한 배포"
+      },
+      "rationale": "Vercel보다 백엔드 친화적. Railway보다 글로벌 분산 우수."
+    }
+  },
+  {
+    "id": 29,
+    "parent": 28,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        25
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "GCP Cloud Run",
+        "reason": "서버리스 컨테이너, 사용량 기반 과금"
+      },
+      "rationale": "트래픽 없을 때 비용 0원"
+    }
+  },
+  {
+    "id": 30,
+    "parent": 29,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        26
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Vercel + Railway"
+      },
+      "rationale": "팀 규모와 속도 고려"
+    }
+  },
+  {
+    "id": 31,
+    "parent": 30,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "프론트엔드 상태 관리 라이브러리 선택"
+      }
+    }
+  },
+  {
+    "id": 32,
+    "parent": 31,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Redux Toolkit",
+        "reason": "표준화, 예측 가능한 상태 흐름"
+      },
+      "rationale": "대형 앱에서 검증된 패턴"
+    }
+  },
+  {
+    "id": 33,
+    "parent": 32,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        32
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Zustand",
+        "reason": "보일러플레이트 없음, 단순 API"
+      },
+      "rationale": "Redux는 현재 앱 규모에 과도할 수 있음"
+    }
+  },
+  {
+    "id": 34,
+    "parent": 33,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        33
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Jotai",
+        "reason": "원자 단위 상태, React 18 최적화"
+      },
+      "rationale": "Zustand보다 더 세밀한 리렌더링 제어"
+    }
+  },
+  {
+    "id": 35,
+    "parent": 34,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        32,
+        33,
+        34
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "TanStack Query + Context",
+        "reason": "서버 상태와 클라이언트 상태 분리"
+      },
+      "rationale": "대부분의 '상태' 문제는 서버 상태임. 전용 라이브러리가 적합."
+    }
+  },
+  {
+    "id": 36,
+    "parent": 35,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        33
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Zustand"
+      },
+      "rationale": "단순성 우선"
+    }
+  },
+  {
+    "id": 37,
+    "parent": 36,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "테스트 전략 수립"
+      }
+    }
+  },
+  {
+    "id": 38,
+    "parent": 37,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Jest + RTL",
+        "reason": "표준, 광범위한 생태계"
+      },
+      "rationale": "React 프로젝트 de facto"
+    }
+  },
+  {
+    "id": 39,
+    "parent": 38,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        38
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vitest + RTL",
+        "reason": "Vite 네이티브, Jest보다 빠름"
+      },
+      "rationale": "Vite 기반 프로젝트면 Vitest가 설정 없이 동작"
+    }
+  },
+  {
+    "id": 40,
+    "parent": 39,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        38,
+        39
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Playwright",
+        "reason": "E2E 브라우저 테스트"
+      },
+      "rationale": "단위 테스트만으로는 UI 플로우 검증 불가"
+    }
+  },
+  {
+    "id": 41,
+    "parent": 40,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        39
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Vitest + Playwright",
+        "reason": "단위 + E2E 조합"
+      },
+      "rationale": "두 레이어 커버리지"
+    }
+  },
+  {
+    "id": 42,
+    "parent": 41,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        39
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Vitest + RTL"
+      },
+      "rationale": "Vite 사용 중이므로 자연스러운 선택"
+    }
+  },
+  {
+    "id": 43,
+    "parent": 42,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "CI/CD 파이프라인 선택"
+      }
+    }
+  },
+  {
+    "id": 44,
+    "parent": 43,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "GitHub Actions",
+        "reason": "GitHub 네이티브, 무료 티어 충분"
+      },
+      "rationale": "별도 서비스 없이 코드와 파이프라인 동일 위치"
+    }
+  },
+  {
+    "id": 45,
+    "parent": 44,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        44
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "CircleCI",
+        "reason": "캐싱 성능, 복잡한 워크플로우"
+      },
+      "rationale": "빌드 시간 민감한 경우 CircleCI가 빠를 수 있음"
+    }
+  },
+  {
+    "id": 46,
+    "parent": 45,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        44,
+        45
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Turborepo + GitHub Actions",
+        "reason": "모노레포 캐싱 최적화"
+      },
+      "rationale": "모노레포 구조라면 Turborepo 캐싱이 빌드 시간 대폭 단축"
+    }
+  },
+  {
+    "id": 47,
+    "parent": 46,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        44
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "GitHub Actions"
+      },
+      "rationale": "현재 규모에서 충분"
+    }
+  },
+  {
+    "id": 48,
+    "parent": 47,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "모니터링 및 에러 트래킹 도구 선택"
+      }
+    }
+  },
+  {
+    "id": 49,
+    "parent": 48,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "Sentry",
+        "reason": "에러 트래킹 표준, 무료 티어"
+      },
+      "rationale": "운영 초기 필수 도구"
+    }
+  },
+  {
+    "id": 50,
+    "parent": 49,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        49
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Datadog",
+        "reason": "APM + 로그 + 메트릭 통합"
+      },
+      "rationale": "Sentry는 에러만. 성능 병목 분석엔 APM 필요."
+    }
+  },
+  {
+    "id": 51,
+    "parent": 50,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        49,
+        50
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Grafana + Prometheus",
+        "reason": "오픈소스, 자체 호스팅"
+      },
+      "rationale": "비용 제어 가능. 단 운영 부담 있음."
+    }
+  },
+  {
+    "id": 52,
+    "parent": 51,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        50
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Axiom",
+        "reason": "저렴한 로그 분석, 개발자 친화적 UI"
+      },
+      "rationale": "Datadog 대비 10분의 1 비용으로 유사한 로그 분석 가능"
+    }
+  },
+  {
+    "id": 53,
+    "parent": 52,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        49
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "Sentry"
+      },
+      "rationale": "모니터링보다 에러 트래킹이 현재 우선"
+    }
+  },
+  {
+    "id": 54,
+    "parent": 53,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "API 인터페이스 설계 방식 결정"
+      }
+    }
+  },
+  {
+    "id": 55,
+    "parent": 54,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "REST",
+        "reason": "표준, 캐싱, 광범위한 클라이언트 지원"
+      },
+      "rationale": "HTTP 인프라 그대로 활용 가능"
+    }
+  },
+  {
+    "id": 56,
+    "parent": 55,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        55
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "GraphQL",
+        "reason": "클라이언트 주도 쿼리, 과조회 방지"
+      },
+      "rationale": "모바일 클라이언트 다수라면 네트워크 효율 유리"
+    }
+  },
+  {
+    "id": 57,
+    "parent": 56,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        55,
+        56
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "tRPC",
+        "reason": "TypeScript 풀스택 타입 안전"
+      },
+      "rationale": "TS 모노레포라면 클라이언트-서버 타입 공유로 런타임 에러 제거"
+    }
+  },
+  {
+    "id": 58,
+    "parent": 57,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        55
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "REST"
+      },
+      "rationale": "외부 클라이언트 연동 고려 시 REST가 범용적"
+    }
+  },
+  {
+    "id": 59,
+    "parent": 58,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "set_goal",
+      "payload": {
+        "type": "set_goal",
+        "goal": "패키지 매니저 통일"
+      }
+    }
+  },
+  {
+    "id": 60,
+    "parent": 59,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_decision",
+      "payload": {
+        "type": "propose_decision",
+        "db": "npm",
+        "reason": "기본 내장, 추가 설치 불필요"
+      },
+      "rationale": "마찰 최소화"
+    }
+  },
+  {
+    "id": 61,
+    "parent": 60,
+    "author": "claude",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        60
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "pnpm",
+        "reason": "디스크 효율, 빠른 설치, 엄격한 의존성"
+      },
+      "rationale": "모노레포 환경에서 npm 대비 압도적 우위"
+    }
+  },
+  {
+    "id": 62,
+    "parent": 61,
+    "author": "gpt",
+    "timestamp": "2026-06-02T02:29:31.918Z",
+    "patch": {
+      "type": "propose_alternative",
+      "references": [
+        60,
+        61
+      ],
+      "payload": {
+        "type": "propose_alternative",
+        "db": "Bun",
+        "reason": "번들러 + 패키지매니저 + 런타임 통합"
+      },
+      "rationale": "npm 대비 설치 속도 25배. 단 생태계 성숙도 미지수."
+    }
+  },
+  {
+    "id": 63,
+    "parent": 62,
+    "author": "user",
+    "timestamp": "2026-06-02T02:29:31.919Z",
+    "patch": {
+      "type": "select_option",
+      "references": [
+        61
+      ],
+      "payload": {
+        "type": "select_option",
+        "selected": "pnpm"
+      },
+      "rationale": "모노레포 구조 채택 확정에 따라"
+    }
+  }
+]

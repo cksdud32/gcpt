@@ -1,0 +1,23 @@
+{
+  "name": "gcpt",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/simulation.js",
+    "dev": "tsx src/simulation.ts",
+    "run:real": "tsx src/run.ts",
+    "run:stress": "tsx src/orchestration-sim.ts",
+    "test": "tsx src/run-tests.ts",
+    "test:mode": "tsx src/test-modes.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
+    "openai": "^6.41.0"
+  }
+}
