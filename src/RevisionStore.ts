@@ -52,7 +52,8 @@ export class RevisionStore {
     };
   }
 
-  // topic이 이미 결론 확정됐는지 확인 — late worker append 차단용
+  // topic이 현재 결론 확정 상태인지 확인 — late worker append 차단용
+  // consensus_reached 이후에 user_interjection이 있으면 "reopened" → false 반환
   isTopicDecided(goalRevId: number): boolean {
     const goalIdx = this.revisions.findIndex(r => r.id === goalRevId);
     if (goalIdx === -1) return false;
@@ -60,7 +61,13 @@ export class RevisionStore {
       i > goalIdx && r.patch.payload.type === "set_goal",
     );
     const end = nextGoalIdx === -1 ? this.revisions.length : nextGoalIdx;
-    return this.revisions.slice(goalIdx, end).some(r => r.patch.payload.type === "consensus_reached");
+    // 뒤에서부터 탐색 — 가장 최근의 "결정/재개 이벤트"로 판단
+    for (let i = end - 1; i >= goalIdx; i--) {
+      const t = this.revisions[i].patch.payload.type;
+      if (t === "consensus_reached") return true;  // 최근 이벤트가 결론 확정
+      if (t === "user_interjection") return false; // 최근 이벤트가 재개 → not decided
+    }
+    return false;
   }
 
   // --- 직렬화 ---

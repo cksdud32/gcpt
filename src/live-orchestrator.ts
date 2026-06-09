@@ -99,19 +99,35 @@ export class LiveOrchestrator {
 
       const goalRevId = getGoalRevId(this.store);
 
+      // user_interjection → topic이 reopened: decided gate 해제
+      if (rev.patch.payload.type === "user_interjection" && goalRevId !== null) {
+        if (this.decidedGoalRevIds.has(goalRevId)) {
+          console.log("[live] reopen topic", { goalRevId });
+          console.log("[live] decided gate cleared", { goalRevId });
+          this.decidedGoalRevIds.delete(goalRevId);
+        }
+      }
+
       // 사용자가 이미 결론을 확정한 topic이면 새 worker track 시작 안 함
       if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
 
       this.track(async () => {
         // in-flight 중 topic이 decided되면 handle 호출 생략
-        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
+        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
+          console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id });
+          return;
+        }
+        console.log("[live] worker allowed", { goalRevId, revId: rev.id, type: rev.patch.payload.type });
         this.onStatus(`${gptName} responding...`);
         await gpt.handle(rev, goalRevId);
       });
 
       this.track(async () => {
         if (!gptKey) await sleep(300);
-        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
+        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
+          console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id });
+          return;
+        }
         this.onStatus(`${counterName} responding...`);
         await counterWorker.handle(rev, goalRevId);
       });
