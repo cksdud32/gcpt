@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { RevisionStore } from "../RevisionStore.js";
 import { Revision } from "../types.js";
 import { Metrics } from "../metrics.js";
+import { getModeInstruction } from "./mode-instruction.js";
 
 interface ProposalResponse {
   value: string;
@@ -51,11 +52,17 @@ function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
 
 const SYSTEM = `You are a technical advisor in a multi-AI decision system.
 Your role is to propose or counter-propose concrete technical solutions.
-Be concise. Respond ONLY with valid JSON.`;
+Be concise. Respond ONLY with valid JSON.
+
+Language policy: always respond in the same language as the user's goal.
+If the goal is in Korean, write value/reason/rationale in Korean.
+If the goal is in English, write in English.
+Technical terms (e.g. PostgreSQL, NLP, OAuth2) may stay in English regardless.`;
 
 export class RealGPTWorker {
   private client: OpenAI;
   private spokenAt = new Map<number, number>();
+  private respondedInterjections = new Set<number>(); // interjection rev.id
   private readonly maxPerTopic = 2;
 
   constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics) {
@@ -65,28 +72,62 @@ export class RealGPTWorker {
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {
     if (rev.author === "gpt" || capturedGoalRevId === null) return;
 
-    const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
-    if (count >= this.maxPerTopic) return;
-
     const type = rev.patch.payload.type;
     const history = this.store.getHistory();
     const goalRev = history.find((r) => r.id === capturedGoalRevId);
     if (!goalRev) return;
-    const goal = (goalRev.patch.payload as { goal: string }).goal;
+    const goalPayload = goalRev.patch.payload as { goal: string; mode?: string };
+    const goal = goalPayload.goal;
+    const modeInstruction = getModeInstruction(goalPayload.mode as Parameters<typeof getModeInstruction>[0]);
+
+    // ── 케이스별 prompt / patchType / refs / rollback 결정 ──────────
 
     let prompt: string;
+    let patchType: "propose_decision" | "propose_alternative";
+    let refs: number[] | undefined;
+    let rollback: () => void;
 
-    if (type === "set_goal") {
-      prompt = `Goal to decide: "${goal}"\n\nPropose ONE concrete technology/solution.`;
-    } else if (type === "propose_alternative" && rev.author === "claude") {
+    if (type === "user_interjection") {
+      // 결정 이후 재토론 — spokenAt 제한 없이 별도 추적
+      if (this.respondedInterjections.has(rev.id)) return;
+      this.respondedInterjections.add(rev.id);
+      const msg = (rev.patch.payload as { message: string }).message;
+      const ctx = buildContext(this.store, capturedGoalRevId);
+      prompt =
+        `${modeInstruction}\n\nGoal: "${goal}"\n\nDiscussion so far:\n${ctx}\n\n` +
+        `User raised: "${msg}"\n\n` +
+        `Continue the discussion by addressing the user's point. Propose a concrete response.`;
+      patchType = "propose_alternative";
+      refs = [rev.id];
+      rollback = () => this.respondedInterjections.delete(rev.id);
+
+    } else if (type === "set_goal") {
+      const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
+      if (count >= this.maxPerTopic) return;
+      prompt = `${modeInstruction}\n\nGoal to decide: "${goal}"\n\nPropose ONE concrete solution.`;
+      patchType = "propose_decision";
+      refs = undefined;
+      this.spokenAt.set(capturedGoalRevId, count + 1);
+      rollback = () => this.spokenAt.set(capturedGoalRevId, count);
+
+    } else if (type === "propose_alternative" && (rev.author === "claude" || rev.author === "gemini")) {
+      const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
+      if (count >= this.maxPerTopic) return;
       const p = rev.patch.payload as { value: string; reason: string };
       const ctx = buildContext(this.store, capturedGoalRevId);
-      prompt = `Goal: "${goal}"\n\nExisting proposals:\n${ctx}\n\nClaude just proposed "${p.value}" (${p.reason}).\nExplain a specific weakness of Claude's proposal, then propose a different alternative.`;
+      const counterName = rev.author === "gemini" ? "Gemini" : "Claude";
+      prompt = `${modeInstruction}\n\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\n${counterName} just proposed "${p.value}" (${p.reason}).\nExplain a specific weakness of ${counterName}'s proposal, then propose a different alternative.`;
+      patchType = "propose_alternative";
+      refs = [rev.id];
+      this.spokenAt.set(capturedGoalRevId, count + 1);
+      rollback = () => this.spokenAt.set(capturedGoalRevId, count);
+
     } else {
       return;
     }
 
-    this.spokenAt.set(capturedGoalRevId, count + 1);
+    // ── 공통 API 호출 ─────────────────────────────────────────────
+
     if (this.metrics) this.metrics.calls.gpt.total++;
 
     const t0 = Date.now();
@@ -116,14 +157,11 @@ export class RealGPTWorker {
       if (!parsed) {
         console.error(`[GPT] parseFail (goalRevId=${capturedGoalRevId}): ${raw.slice(0, 120)}`);
         if (this.metrics) this.metrics.calls.gpt.parseFail++;
-        this.spokenAt.set(capturedGoalRevId, count); // rollback
+        rollback();
         return;
       }
 
       if (this.metrics) this.metrics.calls.gpt.parseOk++;
-
-      const patchType = type === "set_goal" ? "propose_decision" : "propose_alternative";
-      const refs = type === "propose_alternative" ? [rev.id] : undefined;
 
       this.store.append("gpt", {
         type: patchType,
@@ -134,7 +172,7 @@ export class RealGPTWorker {
     } catch (err) {
       console.error(`[GPT] apiError (goalRevId=${capturedGoalRevId}):`, err instanceof Error ? err.message : err);
       if (this.metrics) this.metrics.calls.gpt.apiError++;
-      this.spokenAt.set(capturedGoalRevId, count); // rollback
+      rollback();
     }
   }
 }

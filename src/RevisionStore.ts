@@ -92,6 +92,7 @@ export class RevisionStore {
 
           state.topics.push({
             goal: payload.goal,
+            mode: payload.mode,
             startRevId: rev.id,
             status: "active",
             proposals: [],
@@ -113,9 +114,11 @@ export class RevisionStore {
           break;
         }
 
+        // consensus_reached (system 자동 수렴) 와 select_option (user 명시적 선택) 은
+        // 동일하게 topic을 "decided"로 표시하지만 author가 다르다.
+        case "consensus_reached":
         case "select_option": {
-          // select_option은 async 환경에서 늦게 도착할 수 있음.
-          // 따라서 자신의 위치(currentTopic)가 아닌
+          // async 환경에서 늦게 도착할 수 있으므로
           // 참조된 winner proposal의 소속 topic으로 귀속시킨다.
           const targetId = references?.[0];
           const target = targetId !== undefined
@@ -151,6 +154,15 @@ export class RevisionStore {
             content: targetPayload as ProposeDecisionPayload | ProposeAlternativePayload,
           };
           ownerTopic.status = "decided";
+          break;
+        }
+
+        case "user_interjection": {
+          // 이미 decided된 topic에 대한 interjection → "reopened" 상태로 전환
+          const topic = currentTopic();
+          if (topic && topic.status === "decided") {
+            topic.status = "reopened";
+          }
           break;
         }
 

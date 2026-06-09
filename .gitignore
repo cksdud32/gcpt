@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+build/
+
+# Environment variables — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Session files (user-generated, may contain personal data)
+gcpt-session-*.json
+*테스트*.json
+*test-session*.json
+
+# Test / simulation artifacts at project root
+/revisions.json
+/orchestration-revisions.json
+/stress-revisions.json
+/run-revisions.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Electron builder temp
+.electron-vite/

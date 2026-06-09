@@ -1,10 +1,13 @@
-export type Author = "user" | "gpt" | "claude";
+export type Author = "user" | "gpt" | "claude" | "gemini" | "system";
+
+export type DiscussionMode = "general" | "development" | "idea";
 
 // --- Payload 타입 분리 (discriminated union) ---
 
 export interface SetGoalPayload {
   type: "set_goal";
   goal: string;
+  mode?: DiscussionMode; // 미입력 시 "general"로 처리
 }
 
 export interface ProposeDecisionPayload {
@@ -24,9 +27,21 @@ export interface SelectOptionPayload {
   selected: string;
 }
 
+// 오케스트레이터 자동 수렴 — 실제 사용자 선택과 구분
+export interface ConsensusReachedPayload {
+  type: "consensus_reached";
+  selected: string; // 승리 제안의 value
+  winner: Author;   // 승리 제안의 author (gpt/gemini/claude)
+}
+
 export interface UserOverridePayload {
   type: "user_override";
   goal?: string;
+}
+
+export interface UserInterjectionPayload {
+  type: "user_interjection";
+  message: string;
 }
 
 export type TypedPayload =
@@ -34,7 +49,9 @@ export type TypedPayload =
   | ProposeDecisionPayload
   | ProposeAlternativePayload
   | SelectOptionPayload
-  | UserOverridePayload;
+  | ConsensusReachedPayload
+  | UserOverridePayload
+  | UserInterjectionPayload;
 
 // --- Patch ---
 
@@ -59,7 +76,7 @@ export interface Revision {
 
 // --- Rebuilt State ---
 
-export type TopicStatus = "active" | "decided" | "overridden" | "closed";
+export type TopicStatus = "active" | "decided" | "reopened" | "overridden" | "closed";
 
 export interface Proposal {
   revisionId: number;
@@ -70,6 +87,7 @@ export interface Proposal {
 
 export interface Topic {
   goal: string;
+  mode?: DiscussionMode;     // set_goal payload에서 복사 (없으면 "general")
   startRevId: number;        // 이 topic의 set_goal revision id
   status: TopicStatus;
   proposals: Proposal[];

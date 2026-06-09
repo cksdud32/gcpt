@@ -2,6 +2,7 @@ import { RevisionStore } from "./RevisionStore.js";
 import { Revision } from "./types.js";
 import { selectByPolicy } from "./policy.js";
 import { Metrics } from "./metrics.js";
+import { getModeInstruction } from "./workers/mode-instruction.js";
 
 const MAX_PROPOSALS_PER_WORKER = 2;
 
@@ -75,14 +76,23 @@ abstract class Worker {
 // ─── MockGPTWorker ────────────────────────────────────────────────
 
 export class MockGPTWorker extends Worker {
-  private db: Record<string, string[]> = {
-    "데이터베이스": ["SQLite",     "PostgreSQL", "MySQL"],
-    "프레임워크":   ["Express.js", "Fastify",    "NestJS"],
-    "인증":         ["JWT",        "Session",    "OAuth2"],
-    "배포":         ["AWS EC2",    "Vercel",     "Railway"],
-    "상태관리":     ["Redux",      "Zustand",    "Recoil"],
-    "테스트":       ["Jest",       "Vitest",     "Mocha"],
-  };
+  private respondedInterjections = new Set<number>(); // interjection rev.id → 중복 응답 방지
+
+  private db: Array<[string[], string[]]> = [
+    [["데이터베이스", "database", "db", "storage"],  ["PostgreSQL", "MySQL",   "SQLite"]],
+    [["프레임워크",   "framework", "backend"],        ["Express",   "Fastify",  "Hono"]],
+    [["인증",         "auth",      "authentication"], ["JWT",       "Session",  "OAuth2"]],
+    [["배포",         "deploy",    "hosting", "ci"],  ["Vercel",    "Railway",  "AWS EC2"]],
+    [["상태관리",     "state",     "store"],          ["Zustand",   "Redux",    "Recoil"]],
+    [["테스트",       "test",      "testing"],        ["Vitest",    "Jest",     "Mocha"]],
+    [["언어",         "language",  "lang"],           ["TypeScript","Go",       "Python"]],
+    [["아키텍처",     "architecture","arch"],         ["Monolith",  "Microservices","Serverless"]],
+    [["모니터링",     "monitoring","observability"],  ["Grafana",   "Datadog",  "Sentry"]],
+    [["캐시",         "cache",     "caching"],        ["Redis",     "Memcached","In-memory"]],
+    [["메시지큐",     "queue",     "message", "mq"],  ["RabbitMQ",  "Kafka",    "SQS"]],
+    [["CI/CD",        "파이프라인","pipeline"],       ["GitHub Actions","GitLab CI","Jenkins"]],
+    [["보안",         "security",  "encryption"],     ["TLS/mTLS",  "Vault",    "AWS KMS"]],
+  ];
 
   constructor(
     store: RevisionStore,
@@ -94,9 +104,29 @@ export class MockGPTWorker extends Worker {
     if (rev.author === "gpt" || capturedGoalRevId === null) return;
 
     const type = rev.patch.payload.type;
+
+    // user_interjection에 대한 응답 — spokenAt 제한 없이 별도 추적
+    if (type === "user_interjection") {
+      if (this.respondedInterjections.has(rev.id)) return;
+      this.respondedInterjections.add(rev.id);
+      if (this.metrics) this.metrics.calls.gpt.total++;
+      const count = this.speakCount(capturedGoalRevId);
+      await simulateCall(this.config, "gpt", capturedGoalRevId, this.metrics, () => {
+        const goal = getCurrentGoal(this.store);
+        const opts = this.findOptions(goal);
+        const pick = opts[count % opts.length];
+        this.store.append("gpt", {
+          type: "propose_alternative",
+          references: [rev.id],
+          payload: { type: "propose_alternative", value: pick, reason: "인터젝션 후 재검토" },
+        });
+      }, () => { this.respondedInterjections.delete(rev.id); });
+      return;
+    }
+
     const willSpeak =
       (type === "set_goal" && this.canSpeak(capturedGoalRevId)) ||
-      (type === "propose_alternative" && rev.author === "claude" && this.canSpeak(capturedGoalRevId));
+      (type === "propose_alternative" && (rev.author === "claude" || rev.author === "gemini") && this.canSpeak(capturedGoalRevId));
 
     if (!willSpeak) return;
 
@@ -127,8 +157,9 @@ export class MockGPTWorker extends Worker {
   }
 
   private findOptions(goal: string): string[] {
-    for (const [key, opts] of Object.entries(this.db)) {
-      if (goal.includes(key)) return opts;
+    const lower = goal.toLowerCase();
+    for (const [keys, opts] of this.db) {
+      if (keys.some(k => lower.includes(k.toLowerCase()))) return opts;
     }
     return ["Option-A", "Option-B", "Option-C"];
   }
@@ -137,14 +168,21 @@ export class MockGPTWorker extends Worker {
 // ─── MockClaudeWorker ─────────────────────────────────────────────
 
 export class MockClaudeWorker extends Worker {
-  private alternatives: Record<string, string[]> = {
-    "데이터베이스": ["PostgreSQL",   "TiDB",        "CockroachDB"],
-    "프레임워크":   ["Fastify",      "Hono",        "Elysia"],
-    "인증":         ["Paseto",       "Session+Redis","Auth0"],
-    "배포":         ["Fly.io",       "Render",      "GCP Cloud Run"],
-    "상태관리":     ["Zustand",      "Jotai",       "TanStack Query"],
-    "테스트":       ["Vitest",       "Playwright",  "Vitest+Playwright"],
-  };
+  private alternatives: Array<[string[], string[]]> = [
+    [["데이터베이스", "database", "db", "storage"],  ["TiDB",         "CockroachDB",    "DynamoDB"]],
+    [["프레임워크",   "framework", "backend"],        ["Hono",         "Elysia",         "Bun HTTP"]],
+    [["인증",         "auth",      "authentication"], ["Paseto",       "Session+Redis",  "Auth0"]],
+    [["배포",         "deploy",    "hosting", "ci"],  ["Fly.io",       "Render",         "GCP Cloud Run"]],
+    [["상태관리",     "state",     "store"],          ["Jotai",        "TanStack Query", "XState"]],
+    [["테스트",       "test",      "testing"],        ["Playwright",   "Cypress",        "Vitest+MSW"]],
+    [["언어",         "language",  "lang"],           ["Rust",         "Zig",            "Elixir"]],
+    [["아키텍처",     "architecture","arch"],         ["Event-Driven", "CQRS",           "Hexagonal"]],
+    [["모니터링",     "monitoring","observability"],  ["OpenTelemetry","Loki+Grafana",    "Honeycomb"]],
+    [["캐시",         "cache",     "caching"],        ["Dragonfly",    "Valkey",         "KeyDB"]],
+    [["메시지큐",     "queue",     "message", "mq"],  ["NATS",         "Redpanda",       "Pulsar"]],
+    [["CI/CD",        "파이프라인","pipeline"],       ["CircleCI",     "Drone CI",       "Tekton"]],
+    [["보안",         "security",  "encryption"],     ["SPIFFE/SPIRE", "HashiCorp Vault", "SOPS"]],
+  ];
 
   constructor(
     store: RevisionStore,
@@ -180,8 +218,9 @@ export class MockClaudeWorker extends Worker {
   }
 
   private findOptions(goal: string): string[] {
-    for (const [key, opts] of Object.entries(this.alternatives)) {
-      if (goal.includes(key)) return opts;
+    const lower = goal.toLowerCase();
+    for (const [keys, opts] of this.alternatives) {
+      if (keys.some(k => lower.includes(k.toLowerCase()))) return opts;
     }
     return ["Alt-X", "Alt-Y", "Alt-Z"];
   }
@@ -257,11 +296,11 @@ export class MockUserWorker extends Worker {
     const hasGPT = topicRevs.some(
       (r) => r.author === "gpt" && (r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative")
     );
-    const hasClaude = topicRevs.some(
-      (r) => r.author === "claude" && r.patch.payload.type === "propose_alternative"
+    const hasCounterProposal = topicRevs.some(
+      (r) => (r.author === "claude" || r.author === "gemini") && r.patch.payload.type === "propose_alternative"
     );
 
-    if (!hasGPT || !hasClaude) return;
+    if (!hasGPT || !hasCounterProposal) return;
 
     const winner = selectByPolicy(topicRevs, history);
     if (!winner) return;
@@ -269,14 +308,16 @@ export class MockUserWorker extends Worker {
     // 선택 등록 (JS 단일 스레드이므로 이 사이에 다른 타이머 끼어들 수 없음)
     this.selectedTopics.add(capturedGoalRevId);
 
-    this.store.append("user", {
-      type: "select_option",
+    // system/consensus_reached — 실제 user 선택이 아닌 오케스트레이터 자동 수렴
+    this.store.append("system", {
+      type: "consensus_reached",
       references: [winner.id],
       payload: {
-        type: "select_option",
+        type: "consensus_reached",
         selected: (winner.patch.payload as { value: string }).value,
+        winner: winner.author,
       },
-      rationale: `Policy 선택 (capturedGoal=${capturedGoalRevId}, winner=${winner.author})`,
+      rationale: `Auto-consensus (goal=${capturedGoalRevId}, winner=${winner.author})`,
     });
   }
 }

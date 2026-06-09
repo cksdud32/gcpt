@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { RevisionStore } from "../RevisionStore.js";
 import { Revision } from "../types.js";
 import { Metrics } from "../metrics.js";
+import { getModeInstruction } from "./mode-instruction.js";
 
 interface ProposalResponse {
   value: string;
@@ -52,7 +53,12 @@ function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
 const SYSTEM = `You are a technical advisor in a multi-AI decision system.
 Your role is to provide thoughtful counter-proposals to existing suggestions.
 First identify a specific weakness of the previous proposal, then suggest a better alternative.
-Be concise. Respond ONLY with valid JSON.`;
+Be concise. Respond ONLY with valid JSON.
+
+Language policy: always respond in the same language as the user's goal.
+If the goal is in Korean, write value/reason/rationale in Korean.
+If the goal is in English, write in English.
+Technical terms (e.g. PostgreSQL, NLP, OAuth2) may stay in English regardless.`;
 
 export class RealClaudeWorker {
   private client: Anthropic;
@@ -76,7 +82,9 @@ export class RealClaudeWorker {
     const history = this.store.getHistory();
     const goalRev = history.find((r) => r.id === capturedGoalRevId);
     if (!goalRev) return;
-    const goal = (goalRev.patch.payload as { goal: string }).goal;
+    const goalPayload = goalRev.patch.payload as { goal: string; mode?: string };
+    const goal = goalPayload.goal;
+    const modeInstruction = getModeInstruction(goalPayload.mode as Parameters<typeof getModeInstruction>[0]);
 
     const gptProposal = rev.patch.payload as { value: string; reason: string };
     const ctx = buildContext(this.store, capturedGoalRevId);
@@ -94,7 +102,7 @@ export class RealClaudeWorker {
         messages: [
           {
             role: "user",
-            content: `Goal: "${goal}"\n\nExisting proposals:\n${ctx}\n\nGPT proposed "${gptProposal.value}" (${gptProposal.reason}).\n\nIdentify one specific weakness of GPT's proposal, then propose a better alternative.\n\nRespond with JSON:\n{"value":"technology name","reason":"one-line (max 20 words)","rationale":"weakness of GPT proposal + why yours is better (max 50 words)"}`,
+            content: `${modeInstruction}\n\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\nGPT proposed "${gptProposal.value}" (${gptProposal.reason}).\n\nIdentify one specific weakness of GPT's proposal, then propose a better alternative.\n\nRespond with JSON:\n{"value":"technology name","reason":"one-line (max 20 words)","rationale":"weakness of GPT proposal + why yours is better (max 50 words)"}`,
           },
         ],
       });
