@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import type { RunResult } from "../../../src/test-modes";
-import type { Revision, Topic } from "../../../src/types";
+import type { Revision, Topic, DiscussionDepth } from "../../../src/types";
+import { DEPTH_LABELS } from "../../../src/types";
 import type { Metrics } from "../../../src/metrics";
 
 // ─── Session 파일 형식 ────────────────────────────────────────────
@@ -88,8 +89,9 @@ declare global {
         | { ok: false; error: string }
       >;
       // Live Discussion
-      startLiveDiscussion: (goals: string[], dm: DiscussionMode) => Promise<{ ok: boolean; error?: string }>;
+      startLiveDiscussion: (goals: string[], dm: DiscussionMode, depth: DiscussionDepth) => Promise<{ ok: boolean; error?: string }>;
       sendInterjection:    (message: string) => Promise<{ ok: boolean }>;
+      acceptConsensus:     ()                => Promise<{ ok: boolean }>;
       onDiscussionUpdate: (cb: (u: { history: Revision[]; topics: Topic[] }) => void) => () => void;
       onDiscussionStatus: (cb: (msg: string) => void) => () => void;
       onDiscussionDone:   (cb: (result: RunResult | null) => void) => () => void;
@@ -310,8 +312,9 @@ export default function App() {
   const wsLogId            = useRef(0);
   const initialSaveSkipped = useRef(false);
 
-  // ── 토론 모드 ────────────────────────────────────────────────────
-  const [discussionMode, setDiscussionMode] = useState<DiscussionMode>("general");
+  // ── 토론 모드 / 깊이 ─────────────────────────────────────────────
+  const [discussionMode,  setDiscussionMode]  = useState<DiscussionMode>("general");
+  const [discussionDepth, setDiscussionDepth] = useState<DiscussionDepth>("balanced");
 
   // ── Live Discussion 상태 ─────────────────────────────────────────
   const [liveEnabled,    setLiveEnabled]    = useState(false); // 실행 방식 토글
@@ -631,8 +634,8 @@ export default function App() {
   }
 
   // Live 실행 — runSelected/runCustom에서 liveEnabled 시 호출
-  async function startLiveRun(goals: string[], dm: DiscussionMode = discussionMode) {
-    console.log("[renderer] calling startLiveDiscussion", goals, "mode=", dm);
+  async function startLiveRun(goals: string[], dm: DiscussionMode = discussionMode, depth: DiscussionDepth = discussionDepth) {
+    console.log("[renderer] calling startLiveDiscussion", goals, "mode=", dm, "depth=", depth);
     try {
       setAiProcessing(true);
       setLiveResult(null);
@@ -641,7 +644,7 @@ export default function App() {
       setSelectedTopicIdx(null);
       setSelectedRevId(null);
 
-      const res = await window.api.startLiveDiscussion(goals, dm);
+      const res = await window.api.startLiveDiscussion(goals, dm, depth);
       if (!res.ok) {
         console.error("[renderer] startLiveDiscussion failed:", res.error);
         setAiProcessing(false);
@@ -653,6 +656,17 @@ export default function App() {
       setAiProcessing(false);
       setLiveStatus("");
     }
+  }
+
+  // Manual 모드 전용: 사용자가 직접 결론 확정
+  async function handleAcceptConsensus() {
+    setAiProcessing(true); // 처리 중 표시
+    const res = await window.api.acceptConsensus();
+    if (!res.ok) {
+      console.warn("[renderer] acceptConsensus failed — workers still running or no active topic");
+      setAiProcessing(false);
+    }
+    // 성공 시: discussion:done이 discussion:accept 핸들러에서 발화됨
   }
 
   // interjection 전송 — 세션 활성 여부 확인 후 live view 재활성화
@@ -704,6 +718,8 @@ export default function App() {
               running={running || aiProcessing}
               discussionMode={discussionMode}
               onDiscussionModeChange={setDiscussionMode}
+              discussionDepth={discussionDepth}
+              onDiscussionDepthChange={setDiscussionDepth}
             />
             <div className="panels">
               <TopicPanel
@@ -718,6 +734,8 @@ export default function App() {
                 liveRunning={aiProcessing}
                 isLiveSession={liveSessionActive}
                 onInterjection={handleInterjection}
+                isManualMode={discussionDepth === "manual"}
+                onAcceptConsensus={handleAcceptConsensus}
               />
               <TimelinePanel
                 revisions={aiProcessing ? (liveResult?.history ?? []) : displayedRevisions}
@@ -824,12 +842,14 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
 
 function Sidebar({ modes, selected, passMap, onSelect,
                    customGoal, onCustomGoalChange, onCustomRun, running,
-                   discussionMode, onDiscussionModeChange }: {
+                   discussionMode, onDiscussionModeChange,
+                   discussionDepth, onDiscussionDepthChange }: {
   modes: string[]; selected: string; passMap: PassMap;
   onSelect: (m: string) => void;
   customGoal: string; onCustomGoalChange: (v: string) => void;
   onCustomRun: () => void; running: boolean;
   discussionMode: DiscussionMode; onDiscussionModeChange: (m: DiscussionMode) => void;
+  discussionDepth: DiscussionDepth; onDiscussionDepthChange: (d: DiscussionDepth) => void;
 }) {
   return (
     <div className="sidebar">
@@ -858,6 +878,31 @@ function Sidebar({ modes, selected, passMap, onSelect,
               title={m === "general" ? "일상적인 주제, 단순 응답" : m === "development" ? "기술 스택·아키텍처 중심" : "창의적 제안·아이디어 발산"}
             >
               {DISC_MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="disc-mode-section">
+        <div className="sidebar-title">
+          토론 깊이
+          {discussionDepth === "deep" && <span className="depth-cost-hint"> ⚠ 토큰 증가</span>}
+          {discussionDepth === "manual" && <span className="depth-cost-hint"> ⚠ 수동 종료</span>}
+        </div>
+        <div className="disc-mode-btns">
+          {(["fast", "balanced", "deep", "manual"] as const).map(d => (
+            <button
+              key={d}
+              className={`disc-mode-btn ${discussionDepth === d ? "active" : ""}`}
+              onClick={() => onDiscussionDepthChange(d)}
+              disabled={running}
+              title={
+                d === "fast"     ? "1라운드 · 빠른 결론" :
+                d === "balanced" ? "2라운드 · 기본 (현재)" :
+                d === "deep"     ? "5라운드 · 심층 토론 · 토큰 증가" :
+                                   "5라운드 · 자동 수렴 없음 · 직접 결론 확정"
+              }
+            >
+              {DEPTH_LABELS[d]}
             </button>
           ))}
         </div>
@@ -1014,13 +1059,16 @@ function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRev
 
 // ─── AI Discussion Panel ──────────────────────────────────────────
 
-function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, isLiveSession, onInterjection }: {
+function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, isLiveSession,
+                           onInterjection, isManualMode, onAcceptConsensus }: {
   result: RunResult | null;
   selectedTopicIdx: number | null;
   liveStatus?: string;
   liveRunning?: boolean;
-  isLiveSession?: boolean; // live 세션 결과가 있으면 decided 이후에도 입력창 유지
+  isLiveSession?: boolean;
   onInterjection?: (msg: string) => void;
+  isManualMode?: boolean;      // manual depth: 자동 수렴 없음
+  onAcceptConsensus?: () => void; // manual depth: 결론 직접 확정
 }) {
   const [interjectText, setInterjectText] = useState("");
 
@@ -1120,6 +1168,16 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
       </div>
       {showInput && (
         <div className="disc-interject-area">
+          {/* Manual 모드: 미결정 topic이 있을 때 "결론 확정" 버튼 표시 */}
+          {isManualMode && isLiveSession && !liveRunning &&
+           result?.topics.some(t => t.status === "active" || t.status === "reopened") && (
+            <div className="disc-manual-accept">
+              <button className="disc-accept-btn" onClick={onAcceptConsensus}>
+                결론 확정 — 최고 점수 제안 채택
+              </button>
+              <span className="disc-accept-hint">AI 평가 점수 기준으로 자동 선택됩니다</span>
+            </div>
+          )}
           {/* decided 이후 continuation 안내 */}
           {isLiveSession && !liveRunning && decidedValue && (
             <div className="disc-decided-hint">

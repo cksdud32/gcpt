@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { RunResult } from "../../src/test-modes";
-import type { Revision, Topic, DiscussionMode } from "../../src/types";
+import type { Revision, Topic, DiscussionMode, DiscussionDepth } from "../../src/types";
 
 type DiscussionUpdate = { history: Revision[]; topics: Topic[] };
 
@@ -34,11 +34,14 @@ contextBridge.exposeInMainWorld("api", {
 
   // ─── Live Discussion ─────────────────────────────────────────────
   // fire-and-forget: main이 즉시 { ok: true } 반환 → await에 묶이지 않음
-  startLiveDiscussion: (goals: string[], dm: DiscussionMode): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke("start-live-discussion", goals, dm),
+  startLiveDiscussion: (goals: string[], dm: DiscussionMode, depth: DiscussionDepth): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("start-live-discussion", goals, dm, depth),
 
   sendInterjection: (message: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:interject", message),
+
+  acceptConsensus: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("discussion:accept"),
 
   // 이벤트 리스너 — cleanup 함수를 반환합니다
   // 단일 이벤트: history + topics 동시 전달 → 렌더러 단일 setState

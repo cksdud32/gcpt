@@ -2,6 +2,29 @@ export type Author = "user" | "gpt" | "claude" | "gemini" | "system";
 
 export type DiscussionMode = "general" | "development" | "idea";
 
+// ─── Discussion Budget ────────────────────────────────────────────
+
+export type DiscussionDepth = "fast" | "balanced" | "deep" | "manual";
+
+export interface DiscussionBudget {
+  maxRoundsPerWorker: number; // AI 워커 1개당 최대 발언 횟수
+  autoConsensus: boolean;     // false = 사용자가 직접 결론 확정
+}
+
+export const DEPTH_BUDGETS: Record<DiscussionDepth, DiscussionBudget> = {
+  fast:     { maxRoundsPerWorker: 1, autoConsensus: true  },
+  balanced: { maxRoundsPerWorker: 2, autoConsensus: true  }, // 현재 기본값
+  deep:     { maxRoundsPerWorker: 5, autoConsensus: true  },
+  manual:   { maxRoundsPerWorker: 5, autoConsensus: false },
+};
+
+export const DEPTH_LABELS: Record<DiscussionDepth, string> = {
+  fast:     "빠르게",
+  balanced: "보통",
+  deep:     "깊게",
+  manual:   "수동",
+};
+
 // --- Payload 타입 분리 (discriminated union) ---
 
 export interface SetGoalPayload {

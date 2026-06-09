@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { RevisionStore } from "../RevisionStore.js";
-import { Revision } from "../types.js";
+import { Revision, DiscussionBudget, DEPTH_BUDGETS } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
 
@@ -63,10 +63,11 @@ export class RealGPTWorker {
   private client: OpenAI;
   private spokenAt = new Map<number, number>();
   private respondedInterjections = new Set<number>(); // interjection rev.id
-  private readonly maxPerTopic = 2;
+  private readonly maxPerTopic: number;
 
-  constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics) {
+  constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget) {
     this.client = new OpenAI({ apiKey });
+    this.maxPerTopic = budget?.maxRoundsPerWorker ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
   }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {

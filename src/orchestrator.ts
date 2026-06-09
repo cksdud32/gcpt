@@ -1,10 +1,10 @@
 import { RevisionStore } from "./RevisionStore.js";
-import { Revision } from "./types.js";
+import { Revision, DiscussionBudget, DEPTH_BUDGETS } from "./types.js";
 import { selectByPolicy } from "./policy.js";
 import { Metrics } from "./metrics.js";
 import { getModeInstruction } from "./workers/mode-instruction.js";
 
-const MAX_PROPOSALS_PER_WORKER = 2;
+const DEFAULT_BUDGET: DiscussionBudget = DEPTH_BUDGETS.balanced;
 
 // ─── Mock 시뮬레이션 설정 ─────────────────────────────────────────
 
@@ -54,8 +54,11 @@ function getCurrentGoal(store: RevisionStore): string {
 
 abstract class Worker {
   protected spokenAt: Map<number, number> = new Map();
+  protected readonly maxRoundsPerWorker: number;
 
-  constructor(protected store: RevisionStore) {}
+  constructor(protected store: RevisionStore, budget?: DiscussionBudget) {
+    this.maxRoundsPerWorker = budget?.maxRoundsPerWorker ?? DEFAULT_BUDGET.maxRoundsPerWorker;
+  }
 
   protected speakCount(goalRevId: number) {
     return this.spokenAt.get(goalRevId) ?? 0;
@@ -66,7 +69,7 @@ abstract class Worker {
   }
 
   protected canSpeak(goalRevId: number) {
-    return this.speakCount(goalRevId) < MAX_PROPOSALS_PER_WORKER;
+    return this.speakCount(goalRevId) < this.maxRoundsPerWorker;
   }
 
   // capturedGoalRevId: subscribe 시점에 Orchestrator가 캡처해서 전달
@@ -97,8 +100,9 @@ export class MockGPTWorker extends Worker {
   constructor(
     store: RevisionStore,
     private metrics?: Metrics,
-    private config: MockConfig = DEFAULT_CONFIG
-  ) { super(store); }
+    private config: MockConfig = DEFAULT_CONFIG,
+    budget?: DiscussionBudget,
+  ) { super(store, budget); }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {
     if (rev.author === "gpt" || capturedGoalRevId === null) return;
@@ -187,8 +191,9 @@ export class MockClaudeWorker extends Worker {
   constructor(
     store: RevisionStore,
     private metrics?: Metrics,
-    private config: MockConfig = DEFAULT_CONFIG
-  ) { super(store); }
+    private config: MockConfig = DEFAULT_CONFIG,
+    budget?: DiscussionBudget,
+  ) { super(store, budget); }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {
     if (rev.author === "claude" || capturedGoalRevId === null) return;
@@ -273,14 +278,22 @@ async function simulateCall(
 // ─── MockUserWorker ───────────────────────────────────────────────
 
 export class MockUserWorker extends Worker {
-  // Set<goalRevId>: 이미 선택 완료된 topic
   private selectedTopics: Set<number> = new Set();
+  private readonly autoConsensus: boolean;
+
+  constructor(store: RevisionStore, budget?: DiscussionBudget) {
+    super(store, budget);
+    this.autoConsensus = budget?.autoConsensus ?? DEFAULT_BUDGET.autoConsensus;
+  }
 
   handle(rev: Revision, capturedGoalRevId: number | null) {
     if (rev.author === "user" || capturedGoalRevId === null) return;
 
     const type = rev.patch.payload.type;
     if (type !== "propose_decision" && type !== "propose_alternative") return;
+
+    // manual 모드: 자동 수렴하지 않음 — 사용자가 직접 결론 확정
+    if (!this.autoConsensus) return;
 
     // capturedGoalRevId 기준으로 중복 선택 방지
     if (this.selectedTopics.has(capturedGoalRevId)) return;

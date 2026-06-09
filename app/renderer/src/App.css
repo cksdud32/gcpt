@@ -928,3 +928,28 @@ button:disabled { opacity: 0.4; cursor: default; }
   cursor: pointer;
 }
 .disc-interject-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Manual mode: 결론 확정 ─────────────────────────────────────── */
+.disc-manual-accept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #1a2a1a;
+  border-bottom: 1px solid #3a5a3a;
+}
+.disc-accept-btn {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: #2d5a2d;
+  color: #6de86d;
+  border: 1px solid #3a7a3a;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.disc-accept-btn:hover { background: #3a6a3a; }
+.disc-accept-hint { font-size: 10px; color: #858585; }
+
+/* ── Depth cost hint ─────────────────────────────────────────────── */
+.depth-cost-hint { font-size: 10px; color: #ce9178; margin-left: 4px; }

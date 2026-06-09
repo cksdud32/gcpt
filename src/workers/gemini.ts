@@ -1,5 +1,5 @@
 import { RevisionStore } from "../RevisionStore.js";
-import { Revision } from "../types.js";
+import { Revision, DiscussionBudget, DEPTH_BUDGETS } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
 
@@ -223,16 +223,21 @@ export class RealGeminiWorker {
   private permanentlyFailed = new Set<number>(); // 429 소진된 goalRevId — 재시도 차단
   private callCount       = 0; // 실제 HTTP 요청 수 (retry + fallback 포함)
 
-  private readonly maxPerTopic = 2;
-  private readonly maxPerRun   = 8; // Live mode: RPM 절약을 위해 낮게 유지
+  private readonly maxPerTopic: number;
+  private readonly maxPerRun:   number;
 
   constructor(
     private apiKey: string,
     private store:  RevisionStore,
     private metrics?: Metrics,
+    budget?: DiscussionBudget,
   ) {
+    const rounds = budget?.maxRoundsPerWorker ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
+    this.maxPerTopic = rounds;
+    // maxPerRun: goal 수 × rounds 기준으로 확보, 최소 8
+    this.maxPerRun = Math.max(8, rounds * 3);
     const models = getModelList();
-    console.log(`[Gemini] model chain: ${models.join(" → ")}`);
+    console.log(`[Gemini] model chain: ${models.join(" → ")}  maxPerTopic=${this.maxPerTopic} maxPerRun=${this.maxPerRun}`);
   }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {

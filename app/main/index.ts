@@ -2,7 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import { promises as fsp } from "fs";
 import { join } from "path";
 import { runMode, runCustomGoal } from "../../src/test-modes";
-import type { DiscussionMode } from "../../src/types";
+import type { DiscussionMode, DiscussionDepth } from "../../src/types";
+import { DEPTH_BUDGETS } from "../../src/types";
 import { MOCK_CONFIGS } from "../../src/orchestrator";
 import { LiveOrchestrator } from "../../src/live-orchestrator";
 
@@ -195,8 +196,9 @@ let liveOrchestrator: LiveOrchestrator | null = null;
 // 중간 업데이트는 discussion:update 로, 완료는 discussion:done 으로 push.
 // invoke가 runGoals()를 await하면 모든 update가 invoke reply와 함께 한 번에
 // 도착해서 React 배칭에 의해 중간 render가 모두 무시되는 문제를 방지.
-ipcMain.handle("start-live-discussion", (_event, goals: string[], discussionMode: DiscussionMode = "general") => {
-  console.log("[main] START LIVE DISCUSSION IPC RECEIVED", goals, "mode=", discussionMode);
+ipcMain.handle("start-live-discussion", (_event, goals: string[], discussionMode: DiscussionMode = "general", depth: DiscussionDepth = "balanced") => {
+  const budget = DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced;
+  console.log("[main] START LIVE DISCUSSION IPC RECEIVED", goals, "mode=", discussionMode, "depth=", depth);
 
   // 기존 세션(continuation 대기 포함)을 종료하고 새 세션 시작
   liveOrchestrator?.terminate();
@@ -210,7 +212,7 @@ ipcMain.handle("start-live-discussion", (_event, goals: string[], discussionMode
   );
   liveOrchestrator = orch;
 
-  orch.runGoals(goals, discussionMode, (snapshot) => {
+  orch.runGoals(goals, discussionMode, budget, (snapshot) => {
     // 초기 goal 완료 또는 interjection 사이클 완료 시 호출됨
     console.log("[main] discussion:done revisionCount=", snapshot.revisionCount);
     safeSend("discussion:done", snapshot);
@@ -235,4 +237,15 @@ ipcMain.handle("discussion:interject", (_event, message: string) => {
   }
   liveOrchestrator.interject(message);
   return { ok: true };
+});
+
+// Manual 모드: 사용자가 직접 결론 확정
+ipcMain.handle("discussion:accept", () => {
+  if (!liveOrchestrator) {
+    console.log("[main] acceptConsensus ignored — no active session");
+    return { ok: false };
+  }
+  const accepted = liveOrchestrator.acceptConsensus();
+  console.log("[main] acceptConsensus", accepted ? "ok" : "rejected (workers still running)");
+  return { ok: accepted };
 });

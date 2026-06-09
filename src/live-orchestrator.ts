@@ -3,7 +3,8 @@ import { MockGPTWorker, MockClaudeWorker, MockUserWorker } from "./orchestrator.
 import { RealGPTWorker } from "./workers/gpt.js";
 import { RealGeminiWorker } from "./workers/gemini.js";
 import { createMetrics } from "./metrics.js";
-import { Revision, Topic, DiscussionMode } from "./types.js";
+import { selectByPolicy } from "./policy.js";
+import { Revision, Topic, DiscussionMode, DiscussionBudget, DEPTH_BUDGETS } from "./types.js";
 import type { RunResult } from "./test-modes.js";
 
 const LIVE_MOCK_CONFIG = {
@@ -33,6 +34,7 @@ export class LiveOrchestrator {
   private interjectQueue: string[] = [];
   private terminated = false; // terminate() 호출 시 continuation loop 즉시 중단
   private lastSentRevCount = 0; // pushUpdate 중복 전송 방지
+  private onGoalsDone?: (result: RunResult) => void; // acceptConsensus에서 재호출용
 
   constructor(
     private onUpdate: (history: Revision[], topics: Topic[]) => void,
@@ -67,24 +69,24 @@ export class LiveOrchestrator {
       });
   }
 
-  private setupWorkers(): void {
+  private setupWorkers(budget: DiscussionBudget): void {
     this.lastSentRevCount = 0; // 새 세션이므로 카운터 초기화
     const gptKey    = process.env.OPENAI_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
     const gpt: { handle: (rev: Revision, id: number | null) => Promise<void> } =
       gptKey
-        ? new RealGPTWorker(gptKey, this.store, this.metrics)
-        : new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG);
+        ? new RealGPTWorker(gptKey, this.store, this.metrics, budget)
+        : new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget);
     const gptName = gptKey ? "GPT" : "GPT (Mock)";
 
     const counterWorker: { handle: (rev: Revision, id: number | null) => Promise<void> } =
       geminiKey
-        ? new RealGeminiWorker(geminiKey, this.store, this.metrics)
-        : new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG);
+        ? new RealGeminiWorker(geminiKey, this.store, this.metrics, budget)
+        : new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget);
     const counterName = geminiKey ? "Gemini" : "Claude (Mock)";
 
-    const user = new MockUserWorker(this.store);
+    const user = new MockUserWorker(this.store, budget);
 
     console.log(`[Live] workers: ${gptName} ↔ ${counterName}`);
 
@@ -132,9 +134,11 @@ export class LiveOrchestrator {
   async runGoals(
     goals: string[],
     discussionMode: DiscussionMode = "general",
+    budget: DiscussionBudget = DEPTH_BUDGETS.balanced,
     onGoalsDone?: (result: RunResult) => void,
   ): Promise<RunResult> {
-    this.setupWorkers();
+    this.onGoalsDone = onGoalsDone;
+    this.setupWorkers(budget);
 
     const isRealApi = !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
     const goalTimeoutMs = isRealApi ? 90_000 : 20_000;
@@ -200,6 +204,42 @@ export class LiveOrchestrator {
     // 큐에만 추가하고 continuation loop에서 처리한다.
     // 여기서 직접 flushInterjections()를 호출하면 loop가 queue를 볼 수 없어
     // onGoalsDone 경로가 우회되고 discussion:done이 전송되지 않는다.
+  }
+
+  /**
+   * Manual 모드에서 사용자가 직접 결론을 확정할 때 호출.
+   * 현재 최고 점수 제안을 policy로 선택해 consensus_reached를 append한다.
+   * workers가 아직 실행 중이면 false를 반환하고 아무것도 하지 않는다.
+   */
+  acceptConsensus(): boolean {
+    if (this.pending > 0) return false;
+
+    const history = this.store.getHistory();
+    const state   = this.store.rebuildState();
+    const topic   = state.topics[state.topics.length - 1];
+    if (!topic || (topic.status !== "active" && topic.status !== "reopened")) return false;
+
+    const topicRevs = history.filter(r => r.id >= topic.startRevId);
+    const winner = selectByPolicy(topicRevs, history);
+    if (!winner) return false;
+
+    this.store.append("system", {
+      type: "consensus_reached",
+      references: [winner.id],
+      payload: {
+        type:     "consensus_reached",
+        selected: (winner.patch.payload as { value: string }).value,
+        winner:   winner.author,
+      },
+      rationale: "User manually accepted best proposal",
+    });
+
+    // subscriber가 처리한 뒤 done 이벤트 전송 (50ms 여유)
+    setTimeout(() => {
+      this.onGoalsDone?.(this.buildRunResult());
+    }, 50);
+
+    return true;
   }
 
   private flushInterjections(): void {
