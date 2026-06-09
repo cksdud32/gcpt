@@ -24,6 +24,16 @@ interface Session {
   editLog?:  WsLogEntry[];
 }
 
+// ─── Topic → Workspace 연결 컨텍스트 ────────────────────────────────
+
+interface TopicContext {
+  goal:          string;
+  selectedValue: string;
+  selectedBy:    string;
+  alternatives:  Array<{ value: string; author: string }>;
+  mode?:         DiscussionMode;
+}
+
 // ─── Workspace 타입 ───────────────────────────────────────────────
 
 interface WsLogEntry {
@@ -308,8 +318,9 @@ export default function App() {
   const [selectedRevId,    setSelectedRevId]    = useState<number | null>(null);
   const [customGoal,       setCustomGoal]       = useState("");
   const [sessionStatus,    setSessionStatus]    = useState<string>("");
-  const [wsLog,   setWsLog]   = useState<WsLogEntry[]>([]);
-  const [wsState, setWsState] = useState<WsEditorState>(WS_EDITOR_INITIAL);
+  const [wsLog,         setWsLog]         = useState<WsLogEntry[]>([]);
+  const [wsState,       setWsState]       = useState<WsEditorState>(WS_EDITOR_INITIAL);
+  const [wsLinkedTopic, setWsLinkedTopic] = useState<TopicContext | null>(null);
   const wsLogId            = useRef(0);
   const initialSaveSkipped = useRef(false);
 
@@ -659,6 +670,26 @@ export default function App() {
     }
   }
 
+  // Revision → Workspace 연결: decided topic의 컨텍스트를 추출해 Workspace로 전환
+  function handleOpenInWorkspace(topicIdx: number) {
+    const topic = displayResult?.topics[topicIdx];
+    if (!topic || !topic.selectedOption) return;
+
+    const selectedVal = (topic.selectedOption.content as { value: string }).value;
+    const alternatives = topic.proposals
+      .filter(p => (p.content as { value: string }).value !== selectedVal)
+      .map(p => ({ value: (p.content as { value: string }).value, author: p.author }));
+
+    setWsLinkedTopic({
+      goal:          topic.goal,
+      selectedValue: selectedVal,
+      selectedBy:    topic.selectedOption.selectedBy,
+      alternatives,
+      mode:          topic.mode,
+    });
+    setView("workspace");
+  }
+
   // Manual 모드 — policy 최고 점수 자동 채택 (토론 중에도 호출 가능)
   async function handleAcceptConsensus() {
     const wasIdle = !aiProcessing;
@@ -738,6 +769,8 @@ export default function App() {
                 result={displayResult}
                 selectedTopicIdx={selectedTopicIdx}
                 onTopicClick={handleTopicClick}
+                onOpenInWorkspace={handleOpenInWorkspace}
+                executionRunning={running || aiProcessing}
               />
               <DiscussionPanel
                 result={displayResult}
@@ -770,6 +803,8 @@ export default function App() {
           wsLog={wsLog}
           addWsLog={addWsLog}
           clearWsLog={clearWsLog}
+          linkedTopic={wsLinkedTopic}
+          onClearLinkedTopic={() => setWsLinkedTopic(null)}
         />
       )}
     </div>
@@ -948,10 +983,12 @@ function Sidebar({ modes, selected, passMap, onSelect,
 
 // ─── Topic Panel ─────────────────────────────────────────────────
 
-function TopicPanel({ result, selectedTopicIdx, onTopicClick }: {
+function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace, executionRunning }: {
   result: RunResult | null;
   selectedTopicIdx: number | null;
   onTopicClick: (idx: number) => void;
+  onOpenInWorkspace?: (idx: number) => void;
+  executionRunning?: boolean;
 }) {
   const hint = selectedTopicIdx !== null
     ? "클릭하여 필터 해제"
@@ -972,6 +1009,7 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick }: {
             topic={topic}
             isSelected={selectedTopicIdx === i}
             onClick={() => onTopicClick(i)}
+            onOpenInWorkspace={!executionRunning ? () => onOpenInWorkspace?.(i) : undefined}
           />
         ))}
       </div>
@@ -979,8 +1017,9 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick }: {
   );
 }
 
-function TopicCard({ topic, isSelected, onClick }: {
+function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace }: {
   topic: Topic; isSelected: boolean; onClick: () => void;
+  onOpenInWorkspace?: () => void;
 }) {
   const isUndecided = topic.selectedOption === null && topic.status !== "reopened";
 
@@ -1003,6 +1042,15 @@ function TopicCard({ topic, isSelected, onClick }: {
           ✓ {(topic.selectedOption.content as { value: string }).value}
           <span className="topic-selected-by">by {topic.selectedOption.selectedBy}</span>
         </div>
+      )}
+      {topic.status === "decided" && topic.selectedOption && onOpenInWorkspace && (
+        <button
+          className="topic-ws-btn"
+          onClick={e => { e.stopPropagation(); onOpenInWorkspace(); }}
+          title="이 결론을 기반으로 Workspace에서 파일 수정 작업을 시작합니다"
+        >
+          Workspace에서 이어서 작업 →
+        </button>
       )}
       {isUndecided && topic.status !== "decided" && (
         <div className="topic-undecided-label">⚠ 미결정</div>
@@ -1357,12 +1405,15 @@ function MetricItem({ name, value, accent }: {
 
 // ─── Workspace Editor ─────────────────────────────────────────────
 
-function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog }: {
+function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
+                           linkedTopic, onClearLinkedTopic }: {
   wsState:    WsEditorState;
   setWsState: React.Dispatch<React.SetStateAction<WsEditorState>>;
   wsLog:      WsLogEntry[];
   addWsLog:   (entry: Omit<WsLogEntry, "id">) => void;
   clearWsLog: () => void;
+  linkedTopic?:       TopicContext | null;
+  onClearLinkedTopic?: () => void;
 }) {
   const { workspacePath, files, skipped, selectedFile, original, proposed, proposeSummary, expandedFolders } = wsState;
 
@@ -1482,6 +1533,24 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog }: {
 
   return (
     <div className="workspace-editor">
+      {/* Revision 연결 컨텍스트 배너 */}
+      {linkedTopic && (
+        <div className="ws-linked-banner">
+          <div className="ws-linked-main">
+            <span className="ws-linked-label">연결된 토론</span>
+            <span className="ws-linked-goal">{linkedTopic.goal}</span>
+            <span className="ws-linked-arrow">→</span>
+            <span className="ws-linked-decision">{linkedTopic.selectedValue}</span>
+            <span className="ws-linked-by">by {linkedTopic.selectedBy}</span>
+          </div>
+          {linkedTopic.alternatives.length > 0 && (
+            <div className="ws-linked-alts">
+              대안: {linkedTopic.alternatives.map(a => a.value).join(" / ")}
+            </div>
+          )}
+          <button className="ws-linked-clear" onClick={onClearLinkedTopic} title="연결 해제">✕</button>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="ws-toolbar">
         <button onClick={openWorkspace} disabled={busy}>Open Workspace</button>

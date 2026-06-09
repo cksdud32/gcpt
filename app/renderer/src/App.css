@@ -281,6 +281,21 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 .topic-selected-by { color: #858585; margin-left: 8px; }
 
+/* ── Workspace 연결 버튼 ──────────────────────────────────────────── */
+.topic-ws-btn {
+  display: block;
+  margin: 4px 10px 6px;
+  padding: 3px 8px;
+  font-size: 10px;
+  background: #1a2a3a;
+  color: #4ec9b0;
+  border: 1px solid #2a4a6a;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.topic-ws-btn:hover { background: #1e3a50; border-color: #4ec9b0; }
+
 .topic-undecided-label {
   padding: 3px 10px;
   font-size: 11px;
@@ -953,6 +968,47 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Depth cost hint ─────────────────────────────────────────────── */
 .depth-cost-hint { font-size: 10px; color: #ce9178; margin-left: 4px; }
+
+/* ── Workspace linked context 배너 ──────────────────────────────── */
+.ws-linked-banner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 36px 7px 12px;
+  background: #1a2a1e;
+  border-bottom: 1px solid #2a4a30;
+  flex-shrink: 0;
+}
+.ws-linked-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ws-linked-label {
+  font-size: 10px;
+  color: #858585;
+  background: #252526;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.ws-linked-goal   { font-size: 11px; color: #cccccc; font-weight: 500; }
+.ws-linked-arrow  { font-size: 11px; color: #4ec9b0; }
+.ws-linked-decision { font-size: 11px; color: #6de8c8; font-weight: 600; }
+.ws-linked-by     { font-size: 10px; color: #858585; }
+.ws-linked-alts   { font-size: 10px; color: #6a6a6a; }
+.ws-linked-clear  {
+  position: absolute;
+  top: 6px; right: 8px;
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.ws-linked-clear:hover { color: #cccccc; }
 
 /* ── Manual mode: per-proposal 채택 버튼 ────────────────────────── */
 .disc-select-btn {
