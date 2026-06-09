@@ -1024,3 +1024,50 @@ button:disabled { opacity: 0.4; cursor: default; }
   line-height: 1.4;
 }
 .disc-select-btn:hover { background: #2a4a2a; border-color: #5a8a5a; }
+
+/* ── Proposal Aggregation Summary ─────────────────────────────── */
+.agg-summary {
+  padding: 6px 10px 5px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #3c3c3c;
+  font-size: 11px;
+}
+
+.agg-title {
+  color: #569cd6;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.agg-proposals { display: flex; flex-direction: column; gap: 2px; }
+
+.agg-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.agg-row.agg-selected .agg-value { color: #4ec9b0; }
+.agg-row.agg-selected .agg-rank  { color: #4ec9b0; }
+
+.agg-rank        { color: #6a6a6a; width: 20px; flex-shrink: 0; font-size: 10px; }
+.agg-value       { color: #ce9178; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agg-score       { color: #858585; background: #2d2d2d; padding: 0 5px; border-radius: 8px; font-size: 10px; flex-shrink: 0; }
+.agg-supporters  { display: flex; gap: 5px; flex-shrink: 0; }
+.agg-supporter   { font-size: 10px; }
+
+.agg-stances {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.agg-stance     { color: #6a6a6a; font-size: 10px; }
+.agg-stance-val { color: #d4d4d4; }

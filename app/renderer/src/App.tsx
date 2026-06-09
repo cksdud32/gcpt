@@ -3,6 +3,7 @@ import type { RunResult } from "../../../src/test-modes";
 import type { Revision, Topic, DiscussionDepth } from "../../../src/types";
 import { DEPTH_LABELS } from "../../../src/types";
 import type { Metrics } from "../../../src/metrics";
+import { computeAggregation, computeStances } from "../../../src/aggregation";
 
 // ─── Session 파일 형식 ────────────────────────────────────────────
 
@@ -1017,6 +1018,58 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
   );
 }
 
+// ─── Aggregation Summary ─────────────────────────────────────────
+
+function AggregationSummary({ topic }: { topic: Topic }) {
+  const agg = computeAggregation(topic);
+  // 3개 미만 proposal 또는 1종류만 있을 때는 표시 불필요
+  if (topic.proposals.length < 3 || agg.length < 2) return null;
+
+  const stances   = computeStances(topic);
+  const aiActors  = (["gpt", "claude", "gemini"] as const).filter(a => stances.has(a));
+
+  return (
+    <div className="agg-summary">
+      <div className="agg-title">현재 우세 의견</div>
+      <div className="agg-proposals">
+        {agg.slice(0, 3).map((ap, i) => (
+          <div key={ap.normalKey} className={`agg-row${ap.isSelected ? " agg-selected" : ""}`}>
+            <span className="agg-rank">#{i + 1}</span>
+            <span className="agg-value">{ap.value}</span>
+            <span className="agg-score">{ap.score}</span>
+            <span className="agg-supporters">
+              {[...ap.supporters]
+                .sort((a, b) => b.count - a.count)
+                .map(s => (
+                  <span
+                    key={s.author}
+                    className="agg-supporter"
+                    style={{ color: ACTOR_META[s.author]?.color ?? "#858585" }}
+                  >
+                    {ACTOR_META[s.author]?.label ?? s.author}×{s.count}
+                  </span>
+                ))}
+            </span>
+          </div>
+        ))}
+      </div>
+      {aiActors.length > 0 && (
+        <div className="agg-stances">
+          {aiActors.map(actor => (
+            <span key={actor} className="agg-stance">
+              <span style={{ color: ACTOR_META[actor].color }}>{ACTOR_META[actor].label}</span>
+              {" → "}
+              <span className="agg-stance-val">{stances.get(actor)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Topic Card ───────────────────────────────────────────────────
+
 function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace }: {
   topic: Topic; isSelected: boolean; onClick: () => void;
   onOpenInWorkspace?: () => void;
@@ -1055,6 +1108,7 @@ function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace }: {
       {isUndecided && topic.status !== "decided" && (
         <div className="topic-undecided-label">⚠ 미결정</div>
       )}
+      <AggregationSummary topic={topic} />
       <div className="proposals">
         {topic.proposals.map((p, j) => {
           const c = p.content as { value: string; reason: string };

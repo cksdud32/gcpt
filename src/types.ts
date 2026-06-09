@@ -124,3 +124,23 @@ export interface Topic {
 export interface State {
   topics: Topic[];
 }
+
+// ─── Proposal Aggregation ─────────────────────────────────────────
+
+export interface AggregatedSupporter {
+  author:    Author;
+  count:     number;   // 이 value를 언급한 횟수
+  lastRevId: number;   // 가장 최근 언급 revision id
+}
+
+export interface AggregatedProposal {
+  value:        string;               // 정규화 전 원본 (첫 등장 케이스 유지)
+  normalKey:    string;               // 정규화된 키 (비교/그룹용)
+  score:        number;               // mentions + recency bonus
+  mentions:     number;               // 총 등장 횟수
+  supporters:   AggregatedSupporter[]; // 지지 actor 목록 (count 내림차순)
+  latestReason: string;               // 가장 최근 reason
+  firstRevId:   number;
+  lastRevId:    number;
+  isSelected:   boolean;              // 현재 selectedOption과 일치
+}
