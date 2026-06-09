@@ -325,6 +325,12 @@ export class RealGeminiWorker {
       const attemptSuffix = totalAttempts > 1 ? `  (model=${model}, attempts=${totalAttempts})` : "";
       console.log(`[Gemini] ok  goal="${goal}"  value="${parsed.value}"${attemptSuffix}`);
 
+      // API 응답 대기 중 topic이 결론 확정됐으면 append 하지 않음
+      if (this.store.isTopicDecided(capturedGoalRevId)) {
+        this.spokenAt.set(capturedGoalRevId, count); // rollback
+        return;
+      }
+
       this.store.append("gemini", {
         type: "propose_alternative",
         references: [rev.id],

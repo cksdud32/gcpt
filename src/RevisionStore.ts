@@ -52,6 +52,17 @@ export class RevisionStore {
     };
   }
 
+  // topic이 이미 결론 확정됐는지 확인 — late worker append 차단용
+  isTopicDecided(goalRevId: number): boolean {
+    const goalIdx = this.revisions.findIndex(r => r.id === goalRevId);
+    if (goalIdx === -1) return false;
+    const nextGoalIdx = this.revisions.findIndex((r, i) =>
+      i > goalIdx && r.patch.payload.type === "set_goal",
+    );
+    const end = nextGoalIdx === -1 ? this.revisions.length : nextGoalIdx;
+    return this.revisions.slice(goalIdx, end).some(r => r.patch.payload.type === "consensus_reached");
+  }
+
   // --- 직렬화 ---
 
   toJSON(): string {

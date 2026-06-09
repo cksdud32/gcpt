@@ -247,7 +247,8 @@ export class LiveOrchestrator {
       rationale: "User accepted best proposal (auto-policy)",
     });
 
-    setTimeout(() => this.onGoalsDone?.(this.buildRunResult()), 50);
+    // setTimeout 없이 즉시 호출 — 렌더러가 즉각 decided 반영
+    this.onGoalsDone?.(this.buildRunResult());
     return true;
   }
 
@@ -298,7 +299,8 @@ export class LiveOrchestrator {
       rationale: "User directly selected this proposal",
     });
 
-    setTimeout(() => this.onGoalsDone?.(this.buildRunResult()), 50);
+    // setTimeout 없이 즉시 호출 — 렌더러가 즉각 decided 반영
+    this.onGoalsDone?.(this.buildRunResult());
     return true;
   }
 

@@ -164,6 +164,12 @@ export class RealGPTWorker {
 
       if (this.metrics) this.metrics.calls.gpt.parseOk++;
 
+      // API 응답 대기 중 topic이 결론 확정됐으면 append 하지 않음
+      if (capturedGoalRevId !== null && this.store.isTopicDecided(capturedGoalRevId)) {
+        rollback();
+        return;
+      }
+
       this.store.append("gpt", {
         type: patchType,
         references: refs,

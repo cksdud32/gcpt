@@ -139,6 +139,11 @@ export class MockGPTWorker extends Worker {
     this.recordSpeak(capturedGoalRevId);
 
     await simulateCall(this.config, "gpt", capturedGoalRevId, this.metrics, () => {
+      // 지연 대기 중 topic이 결론 확정됐으면 append 하지 않음
+      if (this.store.isTopicDecided(capturedGoalRevId)) {
+        this.spokenAt.set(capturedGoalRevId, count); // rollback
+        return;
+      }
       const goal = getCurrentGoal(this.store);
       const opts = this.findOptions(goal);
 
@@ -210,6 +215,10 @@ export class MockClaudeWorker extends Worker {
     this.recordSpeak(capturedGoalRevId);
 
     await simulateCall(this.config, "claude", capturedGoalRevId, this.metrics, () => {
+      if (this.store.isTopicDecided(capturedGoalRevId)) {
+        this.spokenAt.set(capturedGoalRevId, count); // rollback
+        return;
+      }
       const goal = getCurrentGoal(this.store);
       const opts = this.findOptions(goal);
       const pick = opts[count % opts.length];
