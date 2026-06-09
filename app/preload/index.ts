@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld("api", {
   acceptConsensus: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:accept"),
 
+  selectProposal: (revisionId: number): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("discussion:select-proposal", revisionId),
+
   // 이벤트 리스너 — cleanup 함수를 반환합니다
   // 단일 이벤트: history + topics 동시 전달 → 렌더러 단일 setState
   onDiscussionUpdate: (cb: (u: DiscussionUpdate) => void): (() => void) => {

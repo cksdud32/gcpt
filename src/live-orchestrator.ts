@@ -34,7 +34,9 @@ export class LiveOrchestrator {
   private interjectQueue: string[] = [];
   private terminated = false; // terminate() 호출 시 continuation loop 즉시 중단
   private lastSentRevCount = 0; // pushUpdate 중복 전송 방지
-  private onGoalsDone?: (result: RunResult) => void; // acceptConsensus에서 재호출용
+  private onGoalsDone?: (result: RunResult) => void; // acceptConsensus/selectProposal에서 재호출용
+  // 사용자가 직접 결론을 확정한 goalRevId 집합 — late worker가 해당 topic에 append 못하도록 gate
+  private decidedGoalRevIds = new Set<number>();
 
   constructor(
     private onUpdate: (history: Revision[], topics: Topic[]) => void,
@@ -70,7 +72,8 @@ export class LiveOrchestrator {
   }
 
   private setupWorkers(budget: DiscussionBudget): void {
-    this.lastSentRevCount = 0; // 새 세션이므로 카운터 초기화
+    this.lastSentRevCount = 0;
+    this.decidedGoalRevIds.clear(); // 새 세션이므로 초기화
     const gptKey    = process.env.OPENAI_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -92,17 +95,23 @@ export class LiveOrchestrator {
 
     this.store.subscribe((rev) => {
       console.log(`[live] revision #${rev.id} ${rev.author} ${rev.patch.payload.type}`);
-      this.pushUpdate();
+      this.pushUpdate(); // update는 항상 전송 (consensus_reached도 UI에 표시)
 
       const goalRevId = getGoalRevId(this.store);
 
+      // 사용자가 이미 결론을 확정한 topic이면 새 worker track 시작 안 함
+      if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
+
       this.track(async () => {
+        // in-flight 중 topic이 decided되면 handle 호출 생략
+        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
         this.onStatus(`${gptName} responding...`);
         await gpt.handle(rev, goalRevId);
       });
 
       this.track(async () => {
         if (!gptKey) await sleep(300);
+        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
         this.onStatus(`${counterName} responding...`);
         await counterWorker.handle(rev, goalRevId);
       });
@@ -207,21 +216,25 @@ export class LiveOrchestrator {
   }
 
   /**
-   * Manual 모드에서 사용자가 직접 결론을 확정할 때 호출.
-   * 현재 최고 점수 제안을 policy로 선택해 consensus_reached를 append한다.
-   * workers가 아직 실행 중이면 false를 반환하고 아무것도 하지 않는다.
+   * Manual 모드 — policy 기준 최고 점수 제안을 자동 채택.
+   * pending 중에도 호출 가능: decidedGoalRevIds gate로 late worker 차단.
    */
   acceptConsensus(): boolean {
-    if (this.pending > 0) return false;
-
     const history = this.store.getHistory();
     const state   = this.store.rebuildState();
     const topic   = state.topics[state.topics.length - 1];
     if (!topic || (topic.status !== "active" && topic.status !== "reopened")) return false;
 
+    const goalRevId = topic.startRevId;
+    if (this.decidedGoalRevIds.has(goalRevId)) return false; // 이미 확정됨
+    this.decidedGoalRevIds.add(goalRevId);
+
     const topicRevs = history.filter(r => r.id >= topic.startRevId);
     const winner = selectByPolicy(topicRevs, history);
-    if (!winner) return false;
+    if (!winner) {
+      this.decidedGoalRevIds.delete(goalRevId); // rollback
+      return false;
+    }
 
     this.store.append("system", {
       type: "consensus_reached",
@@ -231,14 +244,61 @@ export class LiveOrchestrator {
         selected: (winner.patch.payload as { value: string }).value,
         winner:   winner.author,
       },
-      rationale: "User manually accepted best proposal",
+      rationale: "User accepted best proposal (auto-policy)",
     });
 
-    // subscriber가 처리한 뒤 done 이벤트 전송 (50ms 여유)
-    setTimeout(() => {
-      this.onGoalsDone?.(this.buildRunResult());
-    }, 50);
+    setTimeout(() => this.onGoalsDone?.(this.buildRunResult()), 50);
+    return true;
+  }
 
+  /**
+   * Manual 모드 — 사용자가 특정 proposal revision을 직접 채택.
+   * 토론 중(pending > 0)에도 호출 가능.
+   * 채택 후 해당 topic에 대한 late worker 응답은 차단된다.
+   */
+  selectProposal(revisionId: number): boolean {
+    const rev = this.store.getRevision(revisionId);
+    if (!rev) return false;
+
+    const { type } = rev.patch.payload;
+    if (type !== "propose_decision" && type !== "propose_alternative") return false;
+
+    // 이 revision이 속한 goalRevId 탐색
+    const history = this.store.getHistory();
+    const revIdx  = history.findIndex(r => r.id === revisionId);
+    if (revIdx === -1) return false;
+
+    let goalRevId: number | null = null;
+    for (let i = revIdx; i >= 0; i--) {
+      if (history[i].patch.payload.type === "set_goal") {
+        goalRevId = history[i].id;
+        break;
+      }
+    }
+    if (goalRevId === null) return false;
+
+    if (this.decidedGoalRevIds.has(goalRevId)) return false; // 이미 확정됨
+
+    const state = this.store.rebuildState();
+    const topic = state.topics.find(t => t.startRevId === goalRevId);
+    if (!topic || (topic.status !== "active" && topic.status !== "reopened")) return false;
+
+    this.decidedGoalRevIds.add(goalRevId);
+
+    const value = (rev.patch.payload as { value: string }).value;
+
+    this.store.append("system", {
+      type: "consensus_reached",
+      references: [revisionId],
+      payload: {
+        type:     "consensus_reached",
+        selected: value,
+        winner:   rev.author,
+      },
+      rationale: "User directly selected this proposal",
+    });
+
+    setTimeout(() => this.onGoalsDone?.(this.buildRunResult()), 50);
     return true;
   }
 

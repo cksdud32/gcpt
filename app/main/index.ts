@@ -239,13 +239,18 @@ ipcMain.handle("discussion:interject", (_event, message: string) => {
   return { ok: true };
 });
 
-// Manual 모드: 사용자가 직접 결론 확정
+// Manual 모드: policy 기준 최고 점수 자동 채택
 ipcMain.handle("discussion:accept", () => {
-  if (!liveOrchestrator) {
-    console.log("[main] acceptConsensus ignored — no active session");
-    return { ok: false };
-  }
+  if (!liveOrchestrator) return { ok: false };
   const accepted = liveOrchestrator.acceptConsensus();
-  console.log("[main] acceptConsensus", accepted ? "ok" : "rejected (workers still running)");
+  console.log("[main] acceptConsensus", accepted ? "ok" : "rejected");
+  return { ok: accepted };
+});
+
+// Manual 모드: 사용자가 특정 proposal을 직접 채택
+ipcMain.handle("discussion:select-proposal", (_event, revisionId: number) => {
+  if (!liveOrchestrator) return { ok: false };
+  const accepted = liveOrchestrator.selectProposal(revisionId);
+  console.log("[main] selectProposal revisionId=", revisionId, accepted ? "ok" : "rejected");
   return { ok: accepted };
 });

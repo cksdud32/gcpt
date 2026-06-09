@@ -91,7 +91,8 @@ declare global {
       // Live Discussion
       startLiveDiscussion: (goals: string[], dm: DiscussionMode, depth: DiscussionDepth) => Promise<{ ok: boolean; error?: string }>;
       sendInterjection:    (message: string) => Promise<{ ok: boolean }>;
-      acceptConsensus:     ()                => Promise<{ ok: boolean }>;
+      acceptConsensus:     ()                     => Promise<{ ok: boolean }>;
+      selectProposal:      (revisionId: number)  => Promise<{ ok: boolean }>;
       onDiscussionUpdate: (cb: (u: { history: Revision[]; topics: Topic[] }) => void) => () => void;
       onDiscussionStatus: (cb: (msg: string) => void) => () => void;
       onDiscussionDone:   (cb: (result: RunResult | null) => void) => () => void;
@@ -658,15 +659,26 @@ export default function App() {
     }
   }
 
-  // Manual 모드 전용: 사용자가 직접 결론 확정
+  // Manual 모드 — policy 최고 점수 자동 채택 (토론 중에도 호출 가능)
   async function handleAcceptConsensus() {
-    setAiProcessing(true); // 처리 중 표시
+    const wasIdle = !aiProcessing;
+    if (wasIdle) setAiProcessing(true);
     const res = await window.api.acceptConsensus();
     if (!res.ok) {
-      console.warn("[renderer] acceptConsensus failed — workers still running or no active topic");
-      setAiProcessing(false);
+      console.warn("[renderer] acceptConsensus failed");
+      if (wasIdle) setAiProcessing(false);
     }
-    // 성공 시: discussion:done이 discussion:accept 핸들러에서 발화됨
+  }
+
+  // Manual 모드 — 특정 proposal 직접 채택 (토론 중에도 호출 가능)
+  async function handleSelectProposal(revisionId: number) {
+    const wasIdle = !aiProcessing;
+    if (wasIdle) setAiProcessing(true);
+    const res = await window.api.selectProposal(revisionId);
+    if (!res.ok) {
+      console.warn("[renderer] selectProposal failed revisionId=", revisionId);
+      if (wasIdle) setAiProcessing(false);
+    }
   }
 
   // interjection 전송 — 세션 활성 여부 확인 후 live view 재활성화
@@ -736,6 +748,7 @@ export default function App() {
                 onInterjection={handleInterjection}
                 isManualMode={discussionDepth === "manual"}
                 onAcceptConsensus={handleAcceptConsensus}
+                onSelectProposal={handleSelectProposal}
               />
               <TimelinePanel
                 revisions={aiProcessing ? (liveResult?.history ?? []) : displayedRevisions}
@@ -1060,15 +1073,16 @@ function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRev
 // ─── AI Discussion Panel ──────────────────────────────────────────
 
 function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, isLiveSession,
-                           onInterjection, isManualMode, onAcceptConsensus }: {
+                           onInterjection, isManualMode, onAcceptConsensus, onSelectProposal }: {
   result: RunResult | null;
   selectedTopicIdx: number | null;
   liveStatus?: string;
   liveRunning?: boolean;
   isLiveSession?: boolean;
   onInterjection?: (msg: string) => void;
-  isManualMode?: boolean;      // manual depth: 자동 수렴 없음
-  onAcceptConsensus?: () => void; // manual depth: 결론 직접 확정
+  isManualMode?: boolean;
+  onAcceptConsensus?: () => void;
+  onSelectProposal?: (revisionId: number) => void;
 }) {
   const [interjectText, setInterjectText] = useState("");
 
@@ -1110,6 +1124,19 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
   // 입력창 표시 조건: live 진행 중 OR 이전 live 세션 결과 있음
   const showInput = !!(liveRunning || isLiveSession);
 
+  // Manual 모드: 특정 revision이 속한 topic의 활성 여부 확인 (채택 버튼 표시 조건)
+  function isRevTopicActive(revId: number): boolean {
+    if (!result) return false;
+    for (let i = result.topics.length - 1; i >= 0; i--) {
+      const nextStart = result.topics[i + 1]?.startRevId ?? Infinity;
+      if (revId >= result.topics[i].startRevId && revId < nextStart) {
+        const s = result.topics[i].status;
+        return s === "active" || s === "reopened";
+      }
+    }
+    return false;
+  }
+
   function sendInterjection() {
     const msg = interjectText.trim();
     if (!msg || !onInterjection) return;
@@ -1149,6 +1176,11 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
             ? `결정: ${p.winner ?? ""}`
             : (!isInterjection ? (p.reason as string ?? "") : "");
 
+          // Manual 모드: proposal이고 해당 topic이 아직 미결정일 때만 채택 버튼 표시
+          const showSelectBtn =
+            isManualMode && !isConsensus && !isInterjection &&
+            isRevTopicActive(rev.id) && !!onSelectProposal;
+
           return (
             <div
               key={rev.id}
@@ -1159,6 +1191,15 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
                 <span className={`disc-badge${isConsensus ? " consensus" : ""}${isInterjection ? " interjection" : ""}`}>
                   {badgeLabel}
                 </span>
+                {showSelectBtn && (
+                  <button
+                    className="disc-select-btn"
+                    onClick={() => onSelectProposal!(rev.id)}
+                    title={`이 제안을 채택합니다: ${displayValue}`}
+                  >
+                    채택
+                  </button>
+                )}
               </div>
               <div className="disc-value">{displayValue}</div>
               {displayReason && <div className="disc-reason">{displayReason}</div>}
@@ -1168,16 +1209,6 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
       </div>
       {showInput && (
         <div className="disc-interject-area">
-          {/* Manual 모드: 미결정 topic이 있을 때 "결론 확정" 버튼 표시 */}
-          {isManualMode && isLiveSession && !liveRunning &&
-           result?.topics.some(t => t.status === "active" || t.status === "reopened") && (
-            <div className="disc-manual-accept">
-              <button className="disc-accept-btn" onClick={onAcceptConsensus}>
-                결론 확정 — 최고 점수 제안 채택
-              </button>
-              <span className="disc-accept-hint">AI 평가 점수 기준으로 자동 선택됩니다</span>
-            </div>
-          )}
           {/* decided 이후 continuation 안내 */}
           {isLiveSession && !liveRunning && decidedValue && (
             <div className="disc-decided-hint">

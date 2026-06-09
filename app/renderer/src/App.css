@@ -953,3 +953,18 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 /* ── Depth cost hint ─────────────────────────────────────────────── */
 .depth-cost-hint { font-size: 10px; color: #ce9178; margin-left: 4px; }
+
+/* ── Manual mode: per-proposal 채택 버튼 ────────────────────────── */
+.disc-select-btn {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 7px;
+  background: #1a3a1a;
+  color: #6de86d;
+  border: 1px solid #3a6a3a;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.disc-select-btn:hover { background: #2a4a2a; border-color: #5a8a5a; }
