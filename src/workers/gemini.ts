@@ -1,14 +1,17 @@
 import { RevisionStore } from "../RevisionStore.js";
-import { Revision, DiscussionBudget, DEPTH_BUDGETS } from "../types.js";
+import { Revision, DiscussionBudget, DEPTH_BUDGETS, StanceAction } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
 
 // ─── 파서 ─────────────────────────────────────────────────────────
 
+const VALID_STANCE_ACTIONS = new Set<string>(["defend", "refine", "concede", "propose"]);
+
 interface ProposalResponse {
   value: string;
   reason: string;
   rationale: string;
+  stanceAction?: StanceAction;
 }
 
 // ─── JSON sanitizer ──────────────────────────────────────────────
@@ -39,10 +42,15 @@ function parseResponse(raw: string): ProposalResponse | null {
     const json = JSON.parse(sanitizeJson(raw));
     if (typeof json.value !== "string" || json.value.trim() === "") return null;
     if (typeof json.reason !== "string" || json.reason.trim() === "") return null;
+    const stanceAction: StanceAction | undefined =
+      typeof json.stanceAction === "string" && VALID_STANCE_ACTIONS.has(json.stanceAction)
+        ? json.stanceAction as StanceAction
+        : undefined;
     return {
-      value:     json.value.trim().slice(0, 60),   // 과도한 길이 방지
+      value:     json.value.trim().slice(0, 60),
       reason:    json.reason.trim().slice(0, 120),
       rationale: typeof json.rationale === "string" ? json.rationale.trim().slice(0, 200) : "",
+      stanceAction,
     };
   } catch {
     return null;
@@ -60,6 +68,24 @@ function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
       return `- [${r.author}] ${p.value}: ${p.reason}`;
     })
     .join("\n");
+}
+
+/** Gemini의 이전 발언 추출 */
+function getMyPriorProposals(
+  store: RevisionStore,
+  capturedGoalRevId: number,
+): Array<{ value: string; reason: string }> {
+  const history = store.getHistory();
+  const start   = history.findIndex(r => r.id === capturedGoalRevId);
+  return (start >= 0 ? history.slice(start) : [])
+    .filter(r =>
+      r.author === "gemini" &&
+      (r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative"),
+    )
+    .map(r => ({
+      value:  (r.patch.payload as { value: string }).value,
+      reason: (r.patch.payload as { value: string; reason: string }).reason,
+    }));
 }
 
 // ─── 모델 목록 ────────────────────────────────────────────────────
@@ -139,15 +165,16 @@ async function callGeminiWithFallback(
   prompt:     string,
   canAttempt: () => boolean,
   onAttempt:  () => void,
+  models?:    string[],
 ): Promise<{ body: GeminiBody; model: string; totalAttempts: number }> {
-  const models = getModelList();
+  const models_ = models ?? getModelList();
   let lastError: Error = new Error("no Gemini models available");
   let totalAttempts = 0;
   const maxAttemptsPerModel = 1 + RETRY_DELAYS.length; // 2 (1 initial + 1 retry)
 
-  for (let mi = 0; mi < models.length; mi++) {
-    const model = models[mi];
-    const hasNext = mi + 1 < models.length;
+  for (let mi = 0; mi < models_.length; mi++) {
+    const model = models_[mi];
+    const hasNext = mi + 1 < models_.length;
 
     for (let attempt = 0; attempt < maxAttemptsPerModel; attempt++) {
       if (!canAttempt()) {
@@ -167,7 +194,7 @@ async function callGeminiWithFallback(
         if (status === 404) {
           // 모델 없음 — retry 없이 즉시 다음 모델
           if (hasNext) {
-            console.warn(`[Gemini] model ${model} not found (404), trying fallback ${models[mi + 1]}...`);
+            console.warn(`[Gemini] model ${model} not found (404), trying fallback ${models_[mi + 1]}...`);
           }
           break; // 이 모델의 retry loop 종료
         }
@@ -185,7 +212,7 @@ async function callGeminiWithFallback(
           }
           // retry 소진 → 다음 모델로
           if (hasNext) {
-            console.warn(`[Gemini] model ${model} unavailable (${status}), trying fallback ${models[mi + 1]}...`);
+            console.warn(`[Gemini] model ${model} unavailable (${status}), trying fallback ${models_[mi + 1]}...`);
           }
           break;
         }
@@ -223,20 +250,23 @@ export class RealGeminiWorker {
   private permanentlyFailed = new Set<number>(); // 429 소진된 goalRevId — 재시도 차단
   private callCount       = 0; // 실제 HTTP 요청 수 (retry + fallback 포함)
 
-  private readonly maxPerTopic: number;
-  private readonly maxPerRun:   number;
+  private readonly maxPerTopic:          number;
+  private readonly maxPerRun:            number;
+  private readonly maxDistinctProposals: number;
 
   constructor(
     private apiKey: string,
     private store:  RevisionStore,
     private metrics?: Metrics,
     budget?: DiscussionBudget,
+    private modelOverride?: string,
   ) {
     const rounds = budget?.maxRoundsPerWorker ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
-    this.maxPerTopic = rounds;
+    this.maxPerTopic          = rounds;
+    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.balanced.maxDistinctProposals;
     // maxPerRun: goal 수 × rounds 기준으로 확보, 최소 8
     this.maxPerRun = Math.max(8, rounds * 3);
-    const models = getModelList();
+    const models = modelOverride ? [modelOverride, ...getModelList().filter(m => m !== modelOverride)] : getModelList();
     console.log(`[Gemini] model chain: ${models.join(" → ")}  maxPerTopic=${this.maxPerTopic} maxPerRun=${this.maxPerRun}`);
   }
 
@@ -245,7 +275,6 @@ export class RealGeminiWorker {
 
     const type = rev.patch.payload.type;
     if (type !== "propose_decision" && type !== "propose_alternative") return;
-    if (rev.author !== "gpt") return;
 
     // 이미 rate-limit 소진된 goal은 재시도하지 않음
     if (this.permanentlyFailed.has(capturedGoalRevId)) return;
@@ -265,22 +294,56 @@ export class RealGeminiWorker {
     const goal = goalPayload.goal;
     const modeInstruction = getModeInstruction(goalPayload.mode as Parameters<typeof getModeInstruction>[0]);
 
-    const gptProposal = rev.patch.payload as { value: string; reason: string };
+    const challenger = rev.patch.payload as { value: string; reason: string };
+    const challengerName = rev.author === "claude" ? "Claude" : "GPT";
     const ctx = buildContext(this.store, capturedGoalRevId);
 
-    const prompt =
-      `You are a technical advisor in a team discussion.\n` +
-      `${modeInstruction}\n` +
+    // 내 이전 발언 파악 → defend/concede/propose 계층 prompt
+    const myPrior       = getMyPriorProposals(this.store, capturedGoalRevId);
+    const myLast        = myPrior[myPrior.length - 1];
+    const distinctCount = new Set(myPrior.map(p => p.value.trim().toLowerCase())).size;
+    const limitReached  = distinctCount >= this.maxDistinctProposals;
+
+    const langPolicy =
       `Language policy: respond in the same language as the goal. ` +
       `If the goal is in Korean, write value/reason/rationale in Korean. ` +
-      `Technical terms (e.g. PostgreSQL, NLP, OAuth2) may stay in English.\n` +
-      `Goal: "${goal}"\n` +
-      `GPT proposed: "${gptProposal.value}" — ${gptProposal.reason}\n` +
-      (ctx ? `Other proposals:\n${ctx}\n` : "") +
-      `\nFind ONE weakness of GPT's proposal and suggest a better alternative.\n` +
+      `Technical terms (e.g. PostgreSQL, NLP, OAuth2) may stay in English.\n`;
+
+    const schemaNote =
       `Return ONLY valid JSON (no markdown, no code fences, no extra text).\n` +
-      `Schema: {"value":"string","reason":"string","rationale":"string"}\n` +
+      `Schema: {"value":"string","reason":"string","rationale":"string","stanceAction":"defend|refine|concede|propose"}\n` +
       `STRICT length limits: value ≤ 30 chars, reason ≤ 60 chars, rationale ≤ 120 chars.`;
+
+    let prompt: string;
+    if (myLast) {
+      const limitNote = limitReached
+        ? `\n⚠ You have already introduced ${distinctCount} distinct option(s). You MUST choose DEFEND or CONCEDE — do NOT propose another new option.\n`
+        : "";
+      prompt =
+        `You are Gemini, a technical advisor in a team discussion.\n` +
+        `${modeInstruction}\n${langPolicy}` +
+        `Goal: "${goal}"\n\n` +
+        `Your current position: "${myLast.value}" — ${myLast.reason}\n` +
+        `${challengerName} challenges: "${challenger.value}" — ${challenger.reason}\n\n` +
+        `Full discussion:\n${ctx}\n` +
+        `${limitNote}\n` +
+        `Deliberation rule (follow in priority order):\n` +
+        `1. DEFEND — "${myLast.value}" is still the best choice. Provide a NEW argument not yet stated. (respond with value="${myLast.value}")\n` +
+        `2. CONCEDE — ${challengerName}'s proposal is genuinely stronger. Acknowledge it. (respond with value="${challenger.value}")\n` +
+        `3. PROPOSE — Neither proposal satisfies the goal's constraints. Introduce a clearly different option. (only if NOT limit-reached)\n` +
+        `\nPrefer 1 or 2. Avoid 3 unless there is a strong, specific reason.\n\n` +
+        schemaNote;
+    } else {
+      // 첫 반박: 아직 내 입장 없음 → 자유롭게 대안 제시
+      prompt =
+        `You are a technical advisor in a team discussion.\n` +
+        `${modeInstruction}\n${langPolicy}` +
+        `Goal: "${goal}"\n` +
+        `${challengerName} proposed: "${challenger.value}" — ${challenger.reason}\n` +
+        (ctx ? `Other proposals:\n${ctx}\n` : "") +
+        `\nFind ONE weakness of ${challengerName}'s proposal and suggest a better alternative.\n\n` +
+        schemaNote;
+    }
 
     // spokenAt 선점 (최종 실패 시 롤백)
     this.spokenAt.set(capturedGoalRevId, count + 1);
@@ -288,6 +351,9 @@ export class RealGeminiWorker {
     const t0 = Date.now();
 
     try {
+      const modelList = this.modelOverride
+        ? [this.modelOverride, ...getModelList().filter(m => m !== this.modelOverride)]
+        : undefined;
       const { body, model, totalAttempts } = await callGeminiWithFallback(
         this.apiKey,
         prompt,
@@ -296,6 +362,7 @@ export class RealGeminiWorker {
           this.callCount++;
           if (this.metrics) this.metrics.calls.gemini.total++;
         },
+        modelList,
       );
 
       // 성공
@@ -331,10 +398,11 @@ export class RealGeminiWorker {
         return;
       }
 
+      console.log("[worker append]", { expectedAuthor: "gemini", provider: "gemini", type: "propose_alternative", value: parsed.value.slice(0, 30) });
       this.store.append("gemini", {
         type: "propose_alternative",
         references: [rev.id],
-        payload: { type: "propose_alternative", value: parsed.value, reason: parsed.reason },
+        payload: { type: "propose_alternative", value: parsed.value, reason: parsed.reason, stanceAction: parsed.stanceAction },
         rationale: parsed.rationale || undefined,
       });
 

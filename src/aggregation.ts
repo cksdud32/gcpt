@@ -1,4 +1,4 @@
-import type { Author, Topic, AggregatedProposal } from "./types.js";
+import type { Author, Topic, AggregatedProposal, ActorStanceHistory, StanceShift } from "./types.js";
 
 // ─── Alias Map ────────────────────────────────────────────────────
 // 동일 기술의 다양한 표기를 단일 normalKey로 수렴
@@ -86,4 +86,56 @@ export function computeStances(topic: Topic): Map<Author, string> {
     stances.set(p.author, value);
   }
   return stances;
+}
+
+// ─── computeStanceHistory ─────────────────────────────────────────
+// actor별 입장 변화 흐름을 반환 (shift가 1회 이상인 actor만 포함)
+// trail: 변화 지점만 기록 (RLE) — 연속 동일 값은 축약
+// 반환 순서: shift 횟수 내림차순
+export function computeStanceHistory(topic: Topic): ActorStanceHistory[] {
+  const actorMap = new Map<Author, {
+    trail:      string[];   // display values (original), 변화 시점만
+    shifts:     StanceShift[];
+    lastNormal: string;
+    lastValue:  string;
+  }>();
+
+  for (const p of topic.proposals) {
+    const value     = (p.content as { value: string }).value;
+    const normalKey = normalizeProposal(value);
+    const actor     = p.author;
+
+    const existing = actorMap.get(actor);
+    if (!existing) {
+      actorMap.set(actor, {
+        trail:      [value],
+        shifts:     [],
+        lastNormal: normalKey,
+        lastValue:  value,
+      });
+    } else if (existing.lastNormal !== normalKey) {
+      existing.shifts.push({
+        from:       existing.lastValue,
+        to:         value,
+        revisionId: p.revisionId,
+      });
+      existing.trail.push(value);
+      existing.lastNormal = normalKey;
+      existing.lastValue  = value;
+    }
+    // 같은 normalKey 반복 → trail/shifts 변경 없음
+  }
+
+  const result: ActorStanceHistory[] = [];
+  for (const [actor, st] of actorMap) {
+    if (st.shifts.length === 0) continue;
+    result.push({
+      actor,
+      current: st.lastValue,
+      trail:   st.trail,
+      shifts:  st.shifts,
+    });
+  }
+
+  return result.sort((a, b) => b.shifts.length - a.shifts.length);
 }

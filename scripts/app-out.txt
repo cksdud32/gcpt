@@ -1,0 +1,48 @@
+
+> gcpt@0.1.0 app
+> electron-vite dev
+
+[36mvite v7.3.5 [32mbuilding ssr environment for development...[36m[39m
+transforming...
+[32m✓[39m 12 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.cjs  [39m[1m[2m68.35 kB[22m[1m[22m
+[32m✓ built in 718ms[39m
+[32m
+electron main process built successfully[39m
+[90m
+-----
+[39m
+[36mvite v7.3.5 [32mbuilding ssr environment for development...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.cjs  [39m[1m[2m2.91 kB[22m[1m[22m
+[32m✓ built in 20ms[39m
+[32m
+electron preload scripts built successfully[39m
+[90m
+-----
+[39m
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+starting electron app...
+[39m
+D:\vs\gcpt\out\main\index.cjs:1403
+electron.app.whenReady().then(createWindow);
+             ^
+
+TypeError: Cannot read properties of undefined (reading 'whenReady')
+    at Object.<anonymous> (D:\vs\gcpt\out\main\index.cjs:1403:14)
+    at Module._compile (node:internal/modules/cjs/loader:1271:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1326:10)
+    at Module.load (node:internal/modules/cjs/loader:1126:32)
+    at Module._load (node:internal/modules/cjs/loader:967:12)
+    at c._load (node:electron/js2c/node_init:2:13672)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:101:12)
+    at node:internal/main/run_main_module:23:47
+
+Node.js v18.18.2

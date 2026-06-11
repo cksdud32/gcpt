@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { RunResult } from "../../src/test-modes";
-import type { Revision, Topic, DiscussionMode, DiscussionDepth } from "../../src/types";
+import type { Revision, Topic, DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig } from "../../src/types";
+import type { WorkspacePlan } from "../../src/workspace-providers";
 
 type DiscussionUpdate = { history: Revision[]; topics: Topic[] };
 
@@ -32,19 +33,64 @@ contextBridge.exposeInMainWorld("api", {
     | { ok: false; error: string }
   > => ipcRenderer.invoke("write-workspace-file", workspacePath, relativePath, content),
 
+  workspaceChat: (payload: {
+    messages:     { role: "user" | "assistant"; content: string }[];
+    linkedTopic?: {
+      goal:          string;
+      selectedValue: string;
+      selectedBy:    string;
+      alternatives:  Array<{ value: string; author: string }>;
+      mode?:         string;
+    };
+  }): Promise<
+    | { ok: true;  content: string; provider: "claude" | "mock" }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke("workspace:chat", payload),
+
+  generateWorkspacePlan: (payload: {
+    linkedTopic?: {
+      goal:          string;
+      selectedValue: string;
+      selectedBy:    string;
+      alternatives:  Array<{ value: string; author: string }>;
+      mode?:         string;
+    };
+  }): Promise<
+    | { ok: true;  plan: WorkspacePlan }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke("workspace:generate-plan", payload),
+
   // ─── Live Discussion ─────────────────────────────────────────────
   // fire-and-forget: main이 즉시 { ok: true } 반환 → await에 묶이지 않음
-  startLiveDiscussion: (goals: string[], dm: DiscussionMode, depth: DiscussionDepth): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke("start-live-discussion", goals, dm, depth),
+  startLiveDiscussion: (payload: {
+    goals: string[];
+    mode?: DiscussionMode;
+    depth?: DiscussionDepth;
+    consensusMode?: ConsensusMode;
+  }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("start-live-discussion", payload),
 
   sendInterjection: (message: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:interject", message),
+
+  stopDiscussion: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("discussion:stop"),
 
   acceptConsensus: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:accept"),
 
   selectProposal: (revisionId: number): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:select-proposal", revisionId),
+
+  // ─── Provider Settings ───────────────────────────────────────────
+  getProviderSettings: (): Promise<ProvidersConfig> =>
+    ipcRenderer.invoke("provider:getSettings"),
+
+  saveProviderSettings: (settings: ProvidersConfig): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("provider:saveSettings", settings),
+
+  testProviderConnection: (provider: "gpt" | "claude" | "gemini"): Promise<{ ok: boolean; latency?: number; error?: string }> =>
+    ipcRenderer.invoke("provider:testConnection", provider),
 
   // 이벤트 리스너 — cleanup 함수를 반환합니다
   // 단일 이벤트: history + topics 동시 전달 → 렌더러 단일 setState

@@ -52,8 +52,10 @@ export class RevisionStore {
     };
   }
 
-  // topic이 현재 결론 확정 상태인지 확인 — late worker append 차단용
-  // consensus_reached 이후에 user_interjection이 있으면 "reopened" → false 반환
+  // topic이 worker append를 차단해야 하는 상태인지 확인
+  // consensus_reached: 결론 확정 → 차단
+  // discussion_paused: 중지/timeout → 차단 (late worker append 방지)
+  // user_interjection: 재개 → 허용 (뒤에서부터 탐색 시 paused/decided보다 최신이면 우선)
   isTopicDecided(goalRevId: number): boolean {
     const goalIdx = this.revisions.findIndex(r => r.id === goalRevId);
     if (goalIdx === -1) return false;
@@ -64,8 +66,9 @@ export class RevisionStore {
     // 뒤에서부터 탐색 — 가장 최근의 "결정/재개 이벤트"로 판단
     for (let i = end - 1; i >= goalIdx; i--) {
       const t = this.revisions[i].patch.payload.type;
-      if (t === "consensus_reached") return true;  // 최근 이벤트가 결론 확정
-      if (t === "user_interjection") return false; // 최근 이벤트가 재개 → not decided
+      if (t === "consensus_reached") return true;  // 결론 확정 → 차단
+      if (t === "discussion_paused") return true;  // 중지/timeout → 차단
+      if (t === "user_interjection") return false; // 재개 → 허용
     }
     return false;
   }
@@ -200,6 +203,18 @@ export class RevisionStore {
           }
           break;
         }
+
+        case "discussion_paused": {
+          const topic = currentTopic();
+          if (topic && (topic.status === "active" || topic.status === "reopened")) {
+            topic.status = "paused";
+          }
+          break;
+        }
+
+        case "discussion_deadlock":
+          // 교착 경고 — topic 상태는 "active" 유지 (토론 계속), UI에서 배너로 표시
+          break;
       }
     }
 

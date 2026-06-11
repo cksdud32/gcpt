@@ -1,10 +1,12 @@
 import { RevisionStore } from "./RevisionStore.js";
-import { MockGPTWorker, MockClaudeWorker, MockUserWorker } from "./orchestrator.js";
+import { MockGPTWorker, MockClaudeWorker, MockGeminiWorker } from "./orchestrator.js";
 import { RealGPTWorker } from "./workers/gpt.js";
+import { RealClaudeWorker } from "./workers/claude.js";
 import { RealGeminiWorker } from "./workers/gemini.js";
 import { createMetrics } from "./metrics.js";
 import { selectByPolicy } from "./policy.js";
-import { Revision, Topic, DiscussionMode, DiscussionBudget, DEPTH_BUDGETS } from "./types.js";
+import { ConsensusEvaluator } from "./consensus-evaluator.js";
+import { Revision, Topic, DiscussionMode, DiscussionBudget, ConsensusMode, DEPTH_BUDGETS, ProvidersConfig } from "./types.js";
 import type { RunResult } from "./test-modes.js";
 
 const LIVE_MOCK_CONFIG = {
@@ -32,11 +34,17 @@ export class LiveOrchestrator {
   private metrics  = createMetrics();
   private pending  = 0;
   private interjectQueue: string[] = [];
-  private terminated = false; // terminate() 호출 시 continuation loop 즉시 중단
-  private lastSentRevCount = 0; // pushUpdate 중복 전송 방지
-  private onGoalsDone?: (result: RunResult) => void; // acceptConsensus/selectProposal에서 재호출용
-  // 사용자가 직접 결론을 확정한 goalRevId 집합 — late worker가 해당 topic에 append 못하도록 gate
+  private terminated = false;
+  private lastSentRevCount = 0;
+  private onGoalsDone?: (result: RunResult) => void;
   private decidedGoalRevIds = new Set<number>();
+
+  // ConsensusEvaluator 인스턴스 — setupWorkers 시 초기화
+  private evaluator: ConsensusEvaluator | null = null;
+  private evalBudget: DiscussionBudget | null   = null;
+  private evalAutoConsensus = true;
+  // 교착 경고가 이미 emit된 goalRevId 집합 — 중복 방지
+  private deadlockWarned = new Set<number>();
 
   constructor(
     private onUpdate: (history: Revision[], topics: Topic[]) => void,
@@ -48,6 +56,31 @@ export class LiveOrchestrator {
     this.terminated = true;
   }
 
+  /**
+   * 사용자 요청으로 토론 중지 (until_consensus 모드 전용).
+   * 현재 topic에 discussion_paused revision을 append하고
+   * decidedGoalRevIds gate로 late worker를 차단한 뒤 onGoalsDone을 호출한다.
+   */
+  stopDiscussion(): void {
+    if (this.terminated) return;
+
+    const state  = this.store.rebuildState();
+    const topic  = state.topics[state.topics.length - 1];
+
+    if (topic && (topic.status === "active" || topic.status === "reopened")) {
+      // late worker 차단 — discussion:stop 이후 진행 중인 API 응답이 append되지 않도록
+      this.decidedGoalRevIds.add(topic.startRevId);
+      this.store.append("system", {
+        type: "discussion_paused",
+        payload: { type: "discussion_paused", reason: "user_stop" },
+      });
+    }
+
+    this.terminated = true;
+    // 즉시 done 콜백 — renderer가 paused 상태 반영
+    this.onGoalsDone?.(this.buildRunResult());
+  }
+
   private pushUpdate(): void {
     const history = this.store.getHistory();
     // 동일 snapshot 중복 전송 방지 — 새 revision이 없으면 skip
@@ -57,12 +90,13 @@ export class LiveOrchestrator {
     this.onUpdate(history, state.topics);
   }
 
-  private track(fn: () => Promise<void>): void {
+  private track(fn: () => Promise<void>, onComplete?: () => void): void {
     this.pending++;
     fn()
       .catch(e => console.error("[Live] worker error:", e))
       .finally(() => {
         this.pending--;
+        onComplete?.();
         console.log(`[live] pending=${this.pending}`);
         if (this.pending === 0) {
           this.onStatus("");
@@ -71,68 +105,181 @@ export class LiveOrchestrator {
       });
   }
 
-  private setupWorkers(budget: DiscussionBudget): void {
-    this.lastSentRevCount = 0;
-    this.decidedGoalRevIds.clear(); // 새 세션이므로 초기화
-    const gptKey    = process.env.OPENAI_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+  /**
+   * Evaluator 실행 — 새 pair round가 완성됐을 때만 판정 실행.
+   * consensus / deadlock / safety_limit 결과에 따라 revision을 append한다.
+   */
+  private runEvaluator(goalRevId: number): void {
+    if (!this.evaluator || !this.evalBudget) return;
+    if (this.terminated) return;
+    if (this.decidedGoalRevIds.has(goalRevId)) return;
 
-    const gpt: { handle: (rev: Revision, id: number | null) => Promise<void> } =
-      gptKey
-        ? new RealGPTWorker(gptKey, this.store, this.metrics, budget)
-        : new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget);
-    const gptName = gptKey ? "GPT" : "GPT (Mock)";
+    const history = this.store.getHistory();
+    const topicStart = history.findIndex(r => r.id === goalRevId);
+    if (topicStart === -1) return;
+    const topicRevs = history.slice(topicStart);
 
-    const counterWorker: { handle: (rev: Revision, id: number | null) => Promise<void> } =
-      geminiKey
-        ? new RealGeminiWorker(geminiKey, this.store, this.metrics, budget)
-        : new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget);
-    const counterName = geminiKey ? "Gemini" : "Claude (Mock)";
+    const state = this.store.rebuildState();
+    const topic = state.topics.find(t => t.startRevId === goalRevId);
+    if (!topic || (topic.status !== "active" && topic.status !== "reopened")) return;
 
-    const user = new MockUserWorker(this.store, budget);
+    const verdict = this.evaluator.maybeEvaluate(topicRevs, topic, this.evalBudget, this.evalAutoConsensus);
+    if (verdict === null || verdict === "continue") return;
 
-    console.log(`[Live] workers: ${gptName} ↔ ${counterName}`);
+    console.log(`[live] evaluator verdict=${verdict} round=${this.evaluator["pairCount"]} goalRevId=${goalRevId}`);
+
+    switch (verdict) {
+      case "consensus": {
+        this.decidedGoalRevIds.add(goalRevId);
+        const winner = selectByPolicy(topicRevs, history);
+        if (!winner) { this.decidedGoalRevIds.delete(goalRevId); return; }
+        this.store.append("system", {
+          type: "consensus_reached",
+          references: [winner.id],
+          payload: {
+            type:     "consensus_reached",
+            selected: (winner.patch.payload as { value: string }).value,
+            winner:   winner.author,
+          },
+          rationale: "Evaluator: composite consensus conditions met",
+        });
+        break;
+      }
+
+      case "deadlock": {
+        if (this.deadlockWarned.has(goalRevId)) return;
+        this.deadlockWarned.add(goalRevId);
+        this.store.append("system", {
+          type: "discussion_deadlock",
+          payload: {
+            type:   "discussion_deadlock",
+            reason: "교착 상태: AI들이 서로 다른 입장을 유지하고 있습니다. 최근 양보 없음.",
+          },
+          rationale: `sameLeaderRounds=${this.evaluator["sameLeaderRounds"]} pairCount=${this.evaluator["pairCount"]}`,
+        });
+        break;
+      }
+
+      case "safety_limit": {
+        this.decidedGoalRevIds.add(goalRevId);
+        this.store.append("system", {
+          type: "discussion_paused",
+          payload: { type: "discussion_paused", reason: "safety_limit" },
+          rationale: `안전 한도 도달 — maxRoundsPerWorker=${this.evalBudget.maxRoundsPerWorker}`,
+        });
+        this.terminated = true;
+        this.onGoalsDone?.(this.buildRunResult());
+        break;
+      }
+    }
+  }
+
+  private activeWorkerNames: string[] = [];
+
+  private setupWorkers(budget: DiscussionBudget, autoConsensus: boolean, providers: ProvidersConfig): void {
+    this.lastSentRevCount  = 0;
+    this.decidedGoalRevIds.clear();
+    this.deadlockWarned.clear();
+
+    // Provider 상태 스냅샷 로그 (버그 추적용)
+    console.log("[providers] settings snapshot:", {
+      gpt:    { enabled: providers.gpt.enabled,    hasKey: !!providers.gpt.apiKey,    model: providers.gpt.model },
+      claude: { enabled: providers.claude.enabled, hasKey: !!providers.claude.apiKey, model: providers.claude.model },
+      gemini: { enabled: providers.gemini.enabled, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model },
+    });
+
+    type WorkerHandle = { handle: (rev: Revision, id: number | null) => Promise<void> };
+    const workerEntries: Array<{ name: string; author: string; worker: WorkerHandle; isMock: boolean }> = [];
+
+    if (providers.gpt.enabled) {
+      const isMock = !providers.gpt.apiKey;
+      console.log("[provider] creating worker", { provider: "gpt", enabled: true, hasKey: !!providers.gpt.apiKey, model: providers.gpt.model, isMock });
+      workerEntries.push({
+        name:   isMock ? "GPT (Mock)" : "GPT",
+        author: "gpt",
+        worker: isMock
+          ? new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget)
+          : new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, budget, providers.gpt.model),
+        isMock,
+      });
+    } else {
+      console.log("[provider] skipping worker", { provider: "gpt", enabled: false });
+    }
+
+    if (providers.claude.enabled) {
+      const isMock = !providers.claude.apiKey;
+      console.log("[provider] creating worker", { provider: "claude", enabled: true, hasKey: !!providers.claude.apiKey, model: providers.claude.model, isMock });
+      workerEntries.push({
+        name:   isMock ? "Claude (Mock)" : "Claude",
+        author: "claude",
+        worker: isMock
+          ? new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget, true)
+          : new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, budget, providers.claude.model),
+        isMock,
+      });
+    } else {
+      console.log("[provider] skipping worker", { provider: "claude", enabled: false });
+    }
+
+    if (providers.gemini.enabled) {
+      const isMock = !providers.gemini.apiKey;
+      console.log("[provider] creating worker", { provider: "gemini", enabled: true, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model, isMock });
+      workerEntries.push({
+        name:   isMock ? "Gemini (Mock)" : "Gemini",
+        author: "gemini",
+        worker: isMock
+          ? new MockGeminiWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget)
+          : new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, budget, providers.gemini.model),
+        isMock,
+      });
+    } else {
+      console.log("[provider] skipping worker", { provider: "gemini", enabled: false });
+    }
+
+    this.activeWorkerNames = workerEntries.map(e => e.name);
+    this.evaluator         = new ConsensusEvaluator(workerEntries.map(e => e.author));
+    this.evalBudget        = budget;
+    this.evalAutoConsensus = autoConsensus;
+
+    const hasRealApi = workerEntries.some(e => !e.isMock);
+    console.log("[providers] active workers:", workerEntries.map(e => `${e.author}(${e.isMock ? "mock" : "real"})`));
+    console.log(`[Live] workers: ${this.activeWorkerNames.join(" ↔ ")} | autoConsensus=${autoConsensus} stability=${budget.stabilityMode}`);
 
     this.store.subscribe((rev) => {
+      if (this.terminated) return; // terminated 이후 revision은 dispatch 하지 않음
       console.log(`[live] revision #${rev.id} ${rev.author} ${rev.patch.payload.type}`);
-      this.pushUpdate(); // update는 항상 전송 (consensus_reached도 UI에 표시)
+      this.pushUpdate();
 
       const goalRevId = getGoalRevId(this.store);
 
-      // user_interjection → topic이 reopened: decided gate 해제
+      // interjection → decided gate 해제 + evaluator 리셋
       if (rev.patch.payload.type === "user_interjection" && goalRevId !== null) {
         if (this.decidedGoalRevIds.has(goalRevId)) {
-          console.log("[live] reopen topic", { goalRevId });
-          console.log("[live] decided gate cleared", { goalRevId });
+          console.log("[live] reopen topic, decided gate cleared", { goalRevId });
           this.decidedGoalRevIds.delete(goalRevId);
         }
+        this.deadlockWarned.delete(goalRevId);
+        this.evaluator?.reset();
       }
 
-      // 사용자가 이미 결론을 확정한 topic이면 새 worker track 시작 안 함
       if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
 
-      this.track(async () => {
-        // in-flight 중 topic이 decided되면 handle 호출 생략
-        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
-          console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id });
-          return;
-        }
-        console.log("[live] worker allowed", { goalRevId, revId: rev.id, type: rev.patch.payload.type });
-        this.onStatus(`${gptName} responding...`);
-        await gpt.handle(rev, goalRevId);
-      });
+      // 각 worker를 순서대로 track — mock worker는 stagger 적용
+      for (let i = 0; i < workerEntries.length; i++) {
+        const { name, worker, isMock } = workerEntries[i];
+        const delayMs = isMock && !hasRealApi ? i * 300 : 0;
 
-      this.track(async () => {
-        if (!gptKey) await sleep(300);
-        if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
-          console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id });
-          return;
-        }
-        this.onStatus(`${counterName} responding...`);
-        await counterWorker.handle(rev, goalRevId);
-      });
-
-      user.handle(rev, goalRevId);
+        this.track(async () => {
+          if (delayMs > 0) await sleep(delayMs);
+          if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
+            console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id, name });
+            return;
+          }
+          console.log("[live] worker allowed", { goalRevId, revId: rev.id, type: rev.patch.payload.type, name });
+          this.onStatus(`${name} responding...`);
+          await worker.handle(rev, goalRevId);
+        }, () => { if (goalRevId !== null) this.runEvaluator(goalRevId); });
+      }
     });
   }
 
@@ -161,11 +308,21 @@ export class LiveOrchestrator {
     discussionMode: DiscussionMode = "general",
     budget: DiscussionBudget = DEPTH_BUDGETS.balanced,
     onGoalsDone?: (result: RunResult) => void,
+    consensusMode: ConsensusMode = "auto",
+    providers?: ProvidersConfig,
   ): Promise<RunResult> {
     this.onGoalsDone = onGoalsDone;
-    this.setupWorkers(budget);
 
-    const isRealApi = !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+    // providers가 없으면 env var 기반 기본값 사용 (하위 호환)
+    const resolvedProviders: ProvidersConfig = providers ?? {
+      gpt:    { enabled: true,  apiKey: process.env.OPENAI_API_KEY ?? "",    model: "gpt-4o-mini" },
+      claude: { enabled: !process.env.GEMINI_API_KEY && !providers, apiKey: process.env.ANTHROPIC_API_KEY ?? "", model: "claude-haiku-4-5-20251001" },
+      gemini: { enabled: !!process.env.GEMINI_API_KEY, apiKey: process.env.GEMINI_API_KEY ?? "", model: "gemini-2.5-flash" },
+    };
+
+    this.setupWorkers(budget, consensusMode === "auto", resolvedProviders);
+
+    const isRealApi = Object.values(resolvedProviders).some(p => p.enabled && p.apiKey);
     const goalTimeoutMs = isRealApi ? 90_000 : 20_000;
 
     // ── 초기 goal 실행 루프 ───────────────────────────────────────────
@@ -183,6 +340,17 @@ export class LiveOrchestrator {
       }
       if (this.pending > 0 && !this.terminated) {
         console.warn(`[Live] timeout for goal "${goal}" pending=${this.pending}`);
+        // 시간 초과: late worker append 차단 + discussion_paused 기록
+        const timedOutRevId = getGoalRevId(this.store);
+        if (timedOutRevId !== null && !this.decidedGoalRevIds.has(timedOutRevId)) {
+          this.decidedGoalRevIds.add(timedOutRevId);
+          this.store.append("system", {
+            type: "discussion_paused",
+            payload: { type: "discussion_paused", reason: "timeout" },
+            rationale: `목표 응답 대기 ${goalTimeoutMs / 1000}s 초과 — 진행 중인 worker 차단됨`,
+          });
+        }
+        this.terminated = true;
       }
       console.log(`[live] goal done: "${goal}"`);
       this.flushInterjections();
