@@ -513,9 +513,10 @@ export default function App() {
   const isInterjectionRef  = useRef(false);
 
   // ── 토론 모드 / 깊이 / 수렴 방식 ────────────────────────────────
-  const [discussionMode,   setDiscussionMode]   = useState<DiscussionMode>("general");
-  const [discussionDepth,  setDiscussionDepth]  = useState<DiscussionDepth>("balanced");
-  const [consensusMode,    setConsensusMode]    = useState<ConsensusMode>("auto");
+  const [discussionMode,      setDiscussionMode]      = useState<DiscussionMode>("general");
+  const [discussionDepth,     setDiscussionDepth]     = useState<DiscussionDepth>("balanced");
+  const [consensusMode,       setConsensusMode]       = useState<ConsensusMode>("auto");
+  const [safetyLimitEnabled,  setSafetyLimitEnabled]  = useState(true);
 
   // ── Provider Settings ─────────────────────────────────────────────
   const [providerSettings, setProviderSettings] = useState<ProvidersConfig>(DEFAULT_PROVIDERS);
@@ -925,7 +926,7 @@ export default function App() {
       setSelectedTopicIdx(null);
       setSelectedRevId(null);
 
-      const res = await window.api.startLiveDiscussion({ goals, mode: dm, depth, consensusMode: cm });
+      const res = await window.api.startLiveDiscussion({ goals, mode: dm, depth, consensusMode: cm, safetyLimitEnabled });
       if (!res.ok) {
         console.error("[renderer] startLiveDiscussion failed:", res.error);
         setAiProcessing(false);
@@ -1123,6 +1124,8 @@ export default function App() {
               onDiscussionDepthChange={setDiscussionDepth}
               consensusMode={consensusMode}
               onConsensusModeChange={setConsensusMode}
+              safetyLimitEnabled={safetyLimitEnabled}
+              onSafetyLimitEnabledChange={setSafetyLimitEnabled}
               providerSettings={providerSettings}
               onProviderSettingsChange={async (next) => {
                 setProviderSettings(next);
@@ -1298,6 +1301,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
                    discussionMode, onDiscussionModeChange,
                    discussionDepth, onDiscussionDepthChange,
                    consensusMode, onConsensusModeChange,
+                   safetyLimitEnabled, onSafetyLimitEnabledChange,
                    providerSettings, onProviderSettingsChange,
                    providerSettingsOpen, onProviderSettingsToggle }: {
   modes: string[]; selected: string; passMap: PassMap;
@@ -1307,6 +1311,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
   discussionMode: DiscussionMode; onDiscussionModeChange: (m: DiscussionMode) => void;
   discussionDepth: DiscussionDepth; onDiscussionDepthChange: (d: DiscussionDepth) => void;
   consensusMode: ConsensusMode; onConsensusModeChange: (c: ConsensusMode) => void;
+  safetyLimitEnabled: boolean; onSafetyLimitEnabledChange: (v: boolean) => void;
   providerSettings: ProvidersConfig;
   onProviderSettingsChange: (s: ProvidersConfig) => void;
   providerSettingsOpen: boolean;
@@ -1412,6 +1417,18 @@ function Sidebar({ modes, selected, passMap, onSelect,
             </button>
           ))}
         </div>
+      </div>
+      <div className="disc-mode-section">
+        <label className="safety-limit-toggle" title="OFF 시 라운드 한도 도달 후에도 토론을 계속합니다. 내부 절대 타임아웃(10~30분)은 항상 유지됩니다.">
+          <input
+            type="checkbox"
+            checked={safetyLimitEnabled}
+            onChange={e => onSafetyLimitEnabledChange(e.target.checked)}
+            disabled={running}
+          />
+          <span>안전 한도 사용</span>
+          {!safetyLimitEnabled && <span className="depth-cost-hint"> ⚠ 라운드 무제한</span>}
+        </label>
       </div>
       <div className="custom-goal-section">
         <div className="sidebar-title" style={{ padding: "8px 10px 6px" }}>직접 입력</div>

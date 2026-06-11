@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("api", {
     mode?: DiscussionMode;
     depth?: DiscussionDepth;
     consensusMode?: ConsensusMode;
+    safetyLimitEnabled?: boolean;
   }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke("start-live-discussion", payload),
 

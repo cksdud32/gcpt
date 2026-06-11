@@ -62,7 +62,14 @@ export class LiveOrchestrator {
    * decidedGoalRevIds gate로 late worker를 차단한 뒤 onGoalsDone을 호출한다.
    */
   stopDiscussion(): void {
-    if (this.terminated) return;
+    const state0  = this.store.rebuildState();
+    const isPaused = state0.topics.some(t => t.status === "paused");
+    console.log("[stop] requested", { terminated: this.terminated, isPaused });
+    if (this.terminated) {
+      // 이미 terminated — 렌더러가 아직 done을 못 받았을 수 있으므로 재전송
+      this.onGoalsDone?.(this.buildRunResult());
+      return;
+    }
 
     const state  = this.store.rebuildState();
     const topic  = state.topics[state.topics.length - 1];
@@ -161,6 +168,11 @@ export class LiveOrchestrator {
       }
 
       case "safety_limit": {
+        if (!this.evalBudget.safetyLimitEnabled) {
+          console.log(`[safety] limit reached but disabled — continuing (round=${this.evaluator["pairCount"]})`);
+          break;
+        }
+        console.log(`[safety] limit reached { reason: "maxRoundsPerWorker", limit: ${this.evalBudget.maxRoundsPerWorker} }`);
         this.decidedGoalRevIds.add(goalRevId);
         this.store.append("system", {
           type: "discussion_paused",
@@ -284,11 +296,12 @@ export class LiveOrchestrator {
       // terminated 이후에는 evaluator 실행 금지 (로그도 출력 안 함)
       if (this.terminated) return;
       currentRoundId++;                 // 이 라운드 이전의 in-flight bail callback 무효화
+      const prevRoundId = currentRoundId;
       const spoke = [...roundSpokeActors];
       roundDispatchedActors.clear();
       roundSpokeActors.clear();
       roundBailedActors.clear();
-      console.log(`[live] round complete — spoke: [${spoke.join(",")}]`);
+      console.log(`[round] complete { roundId: ${prevRoundId}, resolvedActors: [${spoke.join(",")}] }`);
       if (currentGoalRevId !== null) this.runEvaluator(currentGoalRevId);
     };
 
@@ -320,7 +333,10 @@ export class LiveOrchestrator {
       // AI actor의 proposal이 도착 → 발언 기록 후 round 완료 여부 확인
       if (isProposal && workerAuthors.includes(rev.author)) {
         roundSpokeActors.add(rev.author);
+        console.log(`[round] resolved { actor: "${rev.author}", status: "spoke" }`);
         checkRoundComplete(goalRevId);
+        // completeRound → runEvaluator → safety_limit 이 terminated를 세웠을 수 있음
+        if (this.terminated) return;
       }
 
       // 각 worker dispatch — proposal이면 round gate 적용
@@ -336,6 +352,7 @@ export class LiveOrchestrator {
         if (isProposal) {
           // 새 라운드 첫 dispatch 시 timeout 시작
           if (roundDispatchedActors.size === 0) {
+            console.log(`[round] start { roundId: ${currentRoundId}, expectedActors: [${workerAuthors.join(",")}] }`);
             const capturedGoalRevId = goalRevId;
             roundTimeoutHandle = setTimeout(() => {
               // terminated 이후 fired된 경우 timer handle만 정리하고 종료
@@ -363,6 +380,8 @@ export class LiveOrchestrator {
           this.onStatus(`${name} responding...`);
           await worker.handle(rev, capturedGoalRevId);
         }, () => {
+          // terminated 이후 bail 노이즈 차단
+          if (this.terminated) return;
           // stale 라운드의 bail callback 무시 — roundId가 다르면 이미 다른 라운드
           if (capturedRoundId !== currentRoundId) return;
           // track 완료 시 이 actor가 발언 없이 bail했으면 bailed 처리 후 round 완료 확인
@@ -372,7 +391,7 @@ export class LiveOrchestrator {
             !roundSpokeActors.has(capturedAuthor)
           ) {
             roundBailedActors.add(capturedAuthor);
-            console.log(`[live] round bail: ${capturedAuthor} revId=${rev.id}`);
+            console.log(`[round] resolved { actor: "${capturedAuthor}", status: "bail" }`);
             checkRoundComplete(capturedGoalRevId);
           }
         });
@@ -448,6 +467,8 @@ export class LiveOrchestrator {
           });
         }
         this.terminated = true;
+        // 타임아웃 경로에서도 done 전송 — 렌더러가 계속 stop 버튼을 표시하지 않도록
+        this.onGoalsDone?.(this.buildRunResult());
       }
       console.log(`[live] goal done: "${goal}"`);
       this.flushInterjections();

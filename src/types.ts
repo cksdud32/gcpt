@@ -35,13 +35,14 @@ export interface DiscussionBudget {
   maxDistinctProposals: number; // actor당 신규 후보 제안 가능 횟수 (초과 시 defend/concede로 전환)
   stabilityMode:        boolean; // true = 높은 임계값으로 수렴 판단 (until_consensus 전용)
   safetyTimeoutMs:      number;  // 전체 세션 강제 종료 한도 (ms)
+  safetyLimitEnabled:   boolean; // false = safety_limit verdict 무시 (한도 도달 시 토론 계속)
 }
 
 export const DEPTH_BUDGETS: Record<DiscussionDepth, DiscussionBudget> = {
-  fast:            { maxRoundsPerWorker:  1, maxDistinctProposals: 1, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000 },
-  balanced:        { maxRoundsPerWorker:  2, maxDistinctProposals: 2, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000 },
-  deep:            { maxRoundsPerWorker:  5, maxDistinctProposals: 3, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000 },
-  until_consensus: { maxRoundsPerWorker: 20, maxDistinctProposals: 3, stabilityMode: true,  safetyTimeoutMs: 30 * 60 * 1000 },
+  fast:            { maxRoundsPerWorker:  1, maxDistinctProposals: 1, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
+  balanced:        { maxRoundsPerWorker:  2, maxDistinctProposals: 2, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
+  deep:            { maxRoundsPerWorker:  5, maxDistinctProposals: 3, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
+  until_consensus: { maxRoundsPerWorker: 20, maxDistinctProposals: 3, stabilityMode: true,  safetyTimeoutMs: 30 * 60 * 1000, safetyLimitEnabled: true },
 };
 
 export const DEPTH_LABELS: Record<DiscussionDepth, string> = {

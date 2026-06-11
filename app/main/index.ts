@@ -311,9 +311,12 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   mode?: DiscussionMode;
   depth?: DiscussionDepth;
   consensusMode?: ConsensusMode;
+  safetyLimitEnabled?: boolean;
 }) => {
-  const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto" } = payload;
-  const budget = DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced;
+  const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto", safetyLimitEnabled } = payload;
+  const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced };
+  // 런타임 safetyLimitEnabled 오버라이드 (UI 토글)
+  if (safetyLimitEnabled !== undefined) budget.safetyLimitEnabled = safetyLimitEnabled;
   const timeoutMs = budget.safetyTimeoutMs ?? DEFAULT_DISCUSSION_TIMEOUT_MS;
   console.log("[main] START LIVE DISCUSSION IPC RECEIVED", goals, "mode=", discussionMode, "depth=", depth, "consensus=", consensusMode);
 
