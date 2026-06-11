@@ -241,32 +241,85 @@ export class LiveOrchestrator {
     this.evalBudget        = budget;
     this.evalAutoConsensus = autoConsensus;
 
-    const hasRealApi = workerEntries.some(e => !e.isMock);
+    const hasRealApi   = workerEntries.some(e => !e.isMock);
+    const workerAuthors = workerEntries.map(e => e.author);
     console.log("[providers] active workers:", workerEntries.map(e => `${e.author}(${e.isMock ? "mock" : "real"})`));
     console.log(`[Live] workers: ${this.activeWorkerNames.join(" ↔ ")} | autoConsensus=${autoConsensus} stability=${budget.stabilityMode}`);
 
+    // ── Round state ────────────────────────────────────────────────
+    // 현재 라운드에서 dispatch된 actor (in-flight 또는 완료)
+    const roundDispatchedActors = new Set<string>();
+    // 현재 라운드에서 proposal을 append 완료한 actor
+    const roundSpokeActors      = new Set<string>();
+    let roundTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    // round 강제 완료: timeout or 전원 발언 시 호출
+    const completeRound = (currentGoalRevId: number | null) => {
+      if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
+      const spoke = [...roundSpokeActors];
+      roundSpokeActors.clear();
+      roundDispatchedActors.clear();
+      console.log(`[live] round complete — spoke: [${spoke.join(",")}]`);
+      if (currentGoalRevId !== null) this.runEvaluator(currentGoalRevId);
+    };
+
     this.store.subscribe((rev) => {
-      if (this.terminated) return; // terminated 이후 revision은 dispatch 하지 않음
+      if (this.terminated) return;
       console.log(`[live] revision #${rev.id} ${rev.author} ${rev.patch.payload.type}`);
       this.pushUpdate();
 
       const goalRevId = getGoalRevId(this.store);
+      const type      = rev.patch.payload.type;
+      const isProposal = type === "propose_decision" || type === "propose_alternative";
 
-      // interjection → decided gate 해제 + evaluator 리셋
-      if (rev.patch.payload.type === "user_interjection" && goalRevId !== null) {
+      // set_goal: 라운드 상태 리셋
+      if (type === "set_goal") {
+        if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
+        roundSpokeActors.clear();
+        roundDispatchedActors.clear();
+      }
+
+      // interjection → decided gate 해제 + evaluator 리셋 + 라운드 리셋
+      if (type === "user_interjection" && goalRevId !== null) {
         if (this.decidedGoalRevIds.has(goalRevId)) {
           console.log("[live] reopen topic, decided gate cleared", { goalRevId });
           this.decidedGoalRevIds.delete(goalRevId);
         }
         this.deadlockWarned.delete(goalRevId);
         this.evaluator?.reset();
+        roundSpokeActors.clear();
+        roundDispatchedActors.clear();
       }
 
       if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
 
-      // 각 worker를 순서대로 track — mock worker는 stagger 적용
+      // AI actor의 proposal이 도착하면 라운드 발언 기록
+      if (isProposal && workerAuthors.includes(rev.author)) {
+        if (roundSpokeActors.size === 0) {
+          // 첫 발언 → 라운드 timeout 시작
+          const capturedGoalRevId = goalRevId;
+          roundTimeoutHandle = setTimeout(() => {
+            const spoke = [...roundSpokeActors];
+            console.warn(`[live] round timeout — forcing complete. spoke: [${spoke.join(",")}]`);
+            completeRound(capturedGoalRevId);
+          }, 60_000);
+        }
+        roundSpokeActors.add(rev.author);
+        const allSpoke = workerAuthors.every(a => roundSpokeActors.has(a));
+        if (allSpoke) completeRound(goalRevId);
+      }
+
+      // 각 worker dispatch — proposal이면 round gate 적용
       for (let i = 0; i < workerEntries.length; i++) {
-        const { name, worker, isMock } = workerEntries[i];
+        const { name, author, worker, isMock } = workerEntries[i];
+
+        // round gate: 이미 이 라운드에서 dispatch된 actor는 skip
+        if (isProposal && roundDispatchedActors.has(author)) {
+          console.log(`[live] skip dispatch (round gate): ${author} revId=${rev.id}`);
+          continue;
+        }
+        if (isProposal) roundDispatchedActors.add(author);
+
         const delayMs = isMock && !hasRealApi ? i * 300 : 0;
 
         this.track(async () => {
@@ -275,10 +328,10 @@ export class LiveOrchestrator {
             console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id, name });
             return;
           }
-          console.log("[live] worker allowed", { goalRevId, revId: rev.id, type: rev.patch.payload.type, name });
+          console.log("[live] worker allowed", { goalRevId, revId: rev.id, type, name });
           this.onStatus(`${name} responding...`);
           await worker.handle(rev, goalRevId);
-        }, () => { if (goalRevId !== null) this.runEvaluator(goalRevId); });
+        });
       }
     });
   }

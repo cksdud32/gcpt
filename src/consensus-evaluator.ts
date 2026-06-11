@@ -141,20 +141,44 @@ export class ConsensusEvaluator {
     ) return "consensus";
 
     // ── 교착 판정 ─────────────────────────────────────────────
-    // 양보(concede) stanceAction이 없고, 오래 팽팽하게 지속되는 경우
     const recentConcedes = recentProps.filter(
       r => (r.patch.payload as { stanceAction?: string }).stanceAction === "concede",
     ).length;
 
     if (
-      !this.deadlockEmitted                     &&
+      !this.deadlockEmitted                        &&
       this.sameLeaderRounds >= DEADLOCK_SAME_LEADER &&
-      gap < DEADLOCK_MAX_GAP                    &&
-      recentConcedes === 0                      &&
+      gap < DEADLOCK_MAX_GAP                        &&
+      recentConcedes === 0                          &&
       this.pairCount  >= DEADLOCK_MIN_ROUNDS
     ) {
       this.deadlockEmitted = true;
       return "deadlock";
+    }
+
+    // ── 논거 다양성 침체 교착 ─────────────────────────────────
+    // 최근 라운드가 defend-only이고 새로운 rationale keyword가 없을 때
+    if (!this.deadlockEmitted && this.pairCount >= DEADLOCK_MIN_ROUNDS + 1) {
+      const olderKeywords = new Set<string>();
+      for (const r of olderProps) {
+        const rat = r.patch.rationale ?? "";
+        if (rat) rat.toLowerCase().split(/\s+/).forEach(t => { if (t.length >= 2) olderKeywords.add(t); });
+      }
+
+      const recentHasNovelty = recentProps.some(r => {
+        const rat = r.patch.rationale ?? "";
+        if (!rat) return false;
+        return rat.toLowerCase().split(/\s+/).filter(t => t.length >= 2 && !olderKeywords.has(t)).length >= 2;
+      });
+
+      const recentDefendOnly =
+        recentProps.length > 0 &&
+        recentProps.every(r => (r.patch.payload as { stanceAction?: string }).stanceAction === "defend");
+
+      if (!recentHasNovelty && recentDefendOnly && olderProps.length > 0) {
+        this.deadlockEmitted = true;
+        return "deadlock";
+      }
     }
 
     return "continue";
