@@ -254,10 +254,13 @@ export class LiveOrchestrator {
     // dispatch됐지만 발언 없이 bail한 actor (자신의 revision, maxPerTopic 초과 등)
     const roundBailedActors     = new Set<string>();
     let   roundTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    // 단조 증가 라운드 ID — onComplete 클로저가 stale 라운드에 속하는지 판별
+    let   currentRoundId = 0;
 
     // 라운드 상태 완전 초기화 (set_goal / interjection 시)
     const resetRound = () => {
       if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
+      currentRoundId++;                 // in-flight bail callback 무효화
       roundDispatchedActors.clear();
       roundSpokeActors.clear();
       roundBailedActors.clear();
@@ -280,6 +283,7 @@ export class LiveOrchestrator {
       if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
       // terminated 이후에는 evaluator 실행 금지 (로그도 출력 안 함)
       if (this.terminated) return;
+      currentRoundId++;                 // 이 라운드 이전의 in-flight bail callback 무효화
       const spoke = [...roundSpokeActors];
       roundDispatchedActors.clear();
       roundSpokeActors.clear();
@@ -346,6 +350,7 @@ export class LiveOrchestrator {
         const capturedAuthor     = author;
         const capturedIsProposal = isProposal;
         const capturedGoalRevId  = goalRevId;
+        const capturedRoundId    = currentRoundId;   // 이 dispatch 시점의 라운드 ID
         const delayMs = isMock && !hasRealApi ? i * 300 : 0;
 
         this.track(async () => {
@@ -358,6 +363,8 @@ export class LiveOrchestrator {
           this.onStatus(`${name} responding...`);
           await worker.handle(rev, capturedGoalRevId);
         }, () => {
+          // stale 라운드의 bail callback 무시 — roundId가 다르면 이미 다른 라운드
+          if (capturedRoundId !== currentRoundId) return;
           // track 완료 시 이 actor가 발언 없이 bail했으면 bailed 처리 후 round 완료 확인
           if (
             capturedIsProposal &&

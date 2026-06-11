@@ -66,9 +66,10 @@ export class ConsensusEvaluator {
            r.patch.payload.type === "propose_alternative",
     );
 
-    // 워커별 발언 횟수의 최솟값 = 완성된 pair round 수
+    // 가장 많이 발언한 actor의 횟수 = 진행된 라운드 수
+    // min 대신 max 사용: bail하는 actor가 있어도 pairCount가 진행되도록 함
     const counts = this.workerAuthors.map(a => proposals.filter(r => r.author === a).length);
-    const newPairCount = Math.min(...counts);
+    const newPairCount = Math.max(...counts);
 
     if (newPairCount <= this.pairCount) return null; // 아직 새 라운드 미완성
     this.pairCount = newPairCount;
