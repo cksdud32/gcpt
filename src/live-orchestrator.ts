@@ -241,24 +241,49 @@ export class LiveOrchestrator {
     this.evalBudget        = budget;
     this.evalAutoConsensus = autoConsensus;
 
-    const hasRealApi   = workerEntries.some(e => !e.isMock);
+    const hasRealApi    = workerEntries.some(e => !e.isMock);
     const workerAuthors = workerEntries.map(e => e.author);
     console.log("[providers] active workers:", workerEntries.map(e => `${e.author}(${e.isMock ? "mock" : "real"})`));
     console.log(`[Live] workers: ${this.activeWorkerNames.join(" ↔ ")} | autoConsensus=${autoConsensus} stability=${budget.stabilityMode}`);
 
     // ── Round state ────────────────────────────────────────────────
-    // 현재 라운드에서 dispatch된 actor (in-flight 또는 완료)
+    // dispatch된 actor: in-flight 또는 완료 (proposal trigger 기준)
     const roundDispatchedActors = new Set<string>();
-    // 현재 라운드에서 proposal을 append 완료한 actor
+    // 실제 proposal을 append 완료한 actor
     const roundSpokeActors      = new Set<string>();
-    let roundTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    // dispatch됐지만 발언 없이 bail한 actor (자신의 revision, maxPerTopic 초과 등)
+    const roundBailedActors     = new Set<string>();
+    let   roundTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-    // round 강제 완료: timeout or 전원 발언 시 호출
-    const completeRound = (currentGoalRevId: number | null) => {
+    // 라운드 상태 완전 초기화 (set_goal / interjection 시)
+    const resetRound = () => {
       if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
-      const spoke = [...roundSpokeActors];
-      roundSpokeActors.clear();
       roundDispatchedActors.clear();
+      roundSpokeActors.clear();
+      roundBailedActors.clear();
+    };
+
+    // 라운드 완료: spoke + bailed 합산이 전원이면 evaluator 실행
+    const checkRoundComplete = (currentGoalRevId: number | null): void => {
+      if (roundDispatchedActors.size === 0) return;
+      const allResolved = workerAuthors.every(
+        a => roundSpokeActors.has(a) || roundBailedActors.has(a),
+      );
+      // 발언자 0명인 경우(전원 bail)는 의미 없는 라운드로 간주, evaluator skip
+      if (allResolved && roundSpokeActors.size > 0) {
+        // timer cancel + 상태 clear는 completeRound 내부에서
+        completeRound(currentGoalRevId);
+      }
+    };
+
+    const completeRound = (currentGoalRevId: number | null): void => {
+      if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
+      // terminated 이후에는 evaluator 실행 금지 (로그도 출력 안 함)
+      if (this.terminated) return;
+      const spoke = [...roundSpokeActors];
+      roundDispatchedActors.clear();
+      roundSpokeActors.clear();
+      roundBailedActors.clear();
       console.log(`[live] round complete — spoke: [${spoke.join(",")}]`);
       if (currentGoalRevId !== null) this.runEvaluator(currentGoalRevId);
     };
@@ -268,16 +293,12 @@ export class LiveOrchestrator {
       console.log(`[live] revision #${rev.id} ${rev.author} ${rev.patch.payload.type}`);
       this.pushUpdate();
 
-      const goalRevId = getGoalRevId(this.store);
-      const type      = rev.patch.payload.type;
+      const goalRevId  = getGoalRevId(this.store);
+      const type       = rev.patch.payload.type;
       const isProposal = type === "propose_decision" || type === "propose_alternative";
 
       // set_goal: 라운드 상태 리셋
-      if (type === "set_goal") {
-        if (roundTimeoutHandle) { clearTimeout(roundTimeoutHandle); roundTimeoutHandle = null; }
-        roundSpokeActors.clear();
-        roundDispatchedActors.clear();
-      }
+      if (type === "set_goal") resetRound();
 
       // interjection → decided gate 해제 + evaluator 리셋 + 라운드 리셋
       if (type === "user_interjection" && goalRevId !== null) {
@@ -287,26 +308,15 @@ export class LiveOrchestrator {
         }
         this.deadlockWarned.delete(goalRevId);
         this.evaluator?.reset();
-        roundSpokeActors.clear();
-        roundDispatchedActors.clear();
+        resetRound();
       }
 
       if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) return;
 
-      // AI actor의 proposal이 도착하면 라운드 발언 기록
+      // AI actor의 proposal이 도착 → 발언 기록 후 round 완료 여부 확인
       if (isProposal && workerAuthors.includes(rev.author)) {
-        if (roundSpokeActors.size === 0) {
-          // 첫 발언 → 라운드 timeout 시작
-          const capturedGoalRevId = goalRevId;
-          roundTimeoutHandle = setTimeout(() => {
-            const spoke = [...roundSpokeActors];
-            console.warn(`[live] round timeout — forcing complete. spoke: [${spoke.join(",")}]`);
-            completeRound(capturedGoalRevId);
-          }, 60_000);
-        }
         roundSpokeActors.add(rev.author);
-        const allSpoke = workerAuthors.every(a => roundSpokeActors.has(a));
-        if (allSpoke) completeRound(goalRevId);
+        checkRoundComplete(goalRevId);
       }
 
       // 각 worker dispatch — proposal이면 round gate 적용
@@ -318,19 +328,46 @@ export class LiveOrchestrator {
           console.log(`[live] skip dispatch (round gate): ${author} revId=${rev.id}`);
           continue;
         }
-        if (isProposal) roundDispatchedActors.add(author);
 
+        if (isProposal) {
+          // 새 라운드 첫 dispatch 시 timeout 시작
+          if (roundDispatchedActors.size === 0) {
+            const capturedGoalRevId = goalRevId;
+            roundTimeoutHandle = setTimeout(() => {
+              // terminated 이후 fired된 경우 timer handle만 정리하고 종료
+              if (this.terminated) { roundTimeoutHandle = null; return; }
+              console.warn(`[live] round timeout — forced complete. spoke: [${[...roundSpokeActors].join(",")}] bailed: [${[...roundBailedActors].join(",")}]`);
+              completeRound(capturedGoalRevId);
+            }, 60_000);
+          }
+          roundDispatchedActors.add(author);
+        }
+
+        const capturedAuthor     = author;
+        const capturedIsProposal = isProposal;
+        const capturedGoalRevId  = goalRevId;
         const delayMs = isMock && !hasRealApi ? i * 300 : 0;
 
         this.track(async () => {
           if (delayMs > 0) await sleep(delayMs);
-          if (goalRevId !== null && this.decidedGoalRevIds.has(goalRevId)) {
-            console.log("[live] worker blocked by decided gate", { goalRevId, revId: rev.id, name });
+          if (capturedGoalRevId !== null && this.decidedGoalRevIds.has(capturedGoalRevId)) {
+            console.log("[live] worker blocked by decided gate", { goalRevId: capturedGoalRevId, revId: rev.id, name });
             return;
           }
-          console.log("[live] worker allowed", { goalRevId, revId: rev.id, type, name });
+          console.log("[live] worker allowed", { goalRevId: capturedGoalRevId, revId: rev.id, type, name });
           this.onStatus(`${name} responding...`);
-          await worker.handle(rev, goalRevId);
+          await worker.handle(rev, capturedGoalRevId);
+        }, () => {
+          // track 완료 시 이 actor가 발언 없이 bail했으면 bailed 처리 후 round 완료 확인
+          if (
+            capturedIsProposal &&
+            roundDispatchedActors.has(capturedAuthor) &&
+            !roundSpokeActors.has(capturedAuthor)
+          ) {
+            roundBailedActors.add(capturedAuthor);
+            console.log(`[live] round bail: ${capturedAuthor} revId=${rev.id}`);
+            checkRoundComplete(capturedGoalRevId);
+          }
         });
       }
     });
