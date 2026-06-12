@@ -107,7 +107,7 @@ export interface UserInterjectionPayload {
 /** until_consensus 모드에서 사용자가 [토론 중지] 누를 때 append */
 export interface DiscussionPausedPayload {
   type:   "discussion_paused";
-  reason: "user_stop" | "safety_limit" | "timeout";
+  reason: "user_stop" | "safety_limit" | "timeout" | "hard_timeout";
 }
 
 /**

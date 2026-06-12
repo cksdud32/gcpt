@@ -2038,7 +2038,12 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
 
           const displayValue =
             isDeadlock     ? (p.reason as string ?? "교착 상태") :
-            isPaused       ? ((p as Record<string, unknown>).reason === "user_stop" ? "사용자가 토론을 중지했습니다" : "안전 한도에 도달했습니다") :
+            isPaused       ? (
+              (p as Record<string, unknown>).reason === "user_stop"    ? "사용자가 토론을 중지했습니다" :
+              (p as Record<string, unknown>).reason === "safety_limit" ? "안전 한도에 도달했습니다" :
+              (p as Record<string, unknown>).reason === "hard_timeout" ? "강제 보호 종료됨 (앱 한도)" :
+                                                                         "응답 지연으로 일시 중지됨"
+            ) :
             isInterjection ? (p.message as string ?? "") :
             isConsensus    ? (p.selected as string ?? "") :
                              (p.value    as string ?? "");

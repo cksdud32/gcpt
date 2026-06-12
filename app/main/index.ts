@@ -338,12 +338,11 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   );
   liveOrchestrator = orch;
 
-  // Safety timeout: orchestrator hang 방지 (until_consensus는 30분)
+  // Hard emergency timeout: orchestrator hang 방지 (safetyLimitEnabled 관계없이 항상 동작)
   const timeoutId = setTimeout(() => {
     if (liveOrchestrator === orch) {
-      console.warn("[main] discussion timeout — forcing done");
-      orch.terminate();
-      safeSend("discussion:done", null);
+      console.warn("[main] hard emergency timeout — forcing terminate");
+      orch.hardTerminate(); // discussion_paused(hard_timeout) append + onGoalsDone 호출
       liveOrchestrator = null;
     }
   }, timeoutMs);

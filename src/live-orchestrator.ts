@@ -57,6 +57,31 @@ export class LiveOrchestrator {
   }
 
   /**
+   * 앱 보호용 강제 종료 — main process hard timeout에서 호출.
+   * discussion_paused(hard_timeout)를 append하고 onGoalsDone을 반드시 호출한다.
+   * safetyLimitEnabled 관계없이 항상 종료.
+   */
+  hardTerminate(): void {
+    if (this.terminated) {
+      this.onGoalsDone?.(this.buildRunResult());
+      return;
+    }
+    console.warn("[stop] hard emergency timeout — forcing terminate");
+    const state = this.store.rebuildState();
+    const topic = state.topics[state.topics.length - 1];
+    if (topic && (topic.status === "active" || topic.status === "reopened")) {
+      this.decidedGoalRevIds.add(topic.startRevId);
+      this.store.append("system", {
+        type: "discussion_paused",
+        payload: { type: "discussion_paused", reason: "hard_timeout" },
+        rationale: "앱 보호용 강제 종료 한도 도달",
+      });
+    }
+    this.terminated = true;
+    this.onGoalsDone?.(this.buildRunResult());
+  }
+
+  /**
    * 사용자 요청으로 토론 중지 (until_consensus 모드 전용).
    * 현재 topic에 discussion_paused revision을 append하고
    * decidedGoalRevIds gate로 late worker를 차단한 뒤 onGoalsDone을 호출한다.
@@ -440,6 +465,8 @@ export class LiveOrchestrator {
 
     const isRealApi = Object.values(resolvedProviders).some(p => p.enabled && p.apiKey);
     const goalTimeoutMs = isRealApi ? 90_000 : 20_000;
+    // safetyLimitEnabled=false → goal timeout 무제한 (main hard timeout에 의존)
+    const effectiveGoalTimeoutMs = budget.safetyLimitEnabled ? goalTimeoutMs : Infinity;
 
     // ── 초기 goal 실행 루프 ───────────────────────────────────────────
     for (const goal of goals) {
@@ -450,10 +477,12 @@ export class LiveOrchestrator {
         payload: { type: "set_goal", goal, mode: discussionMode },
       });
 
-      const deadline = Date.now() + goalTimeoutMs;
+      const deadline = Date.now() + effectiveGoalTimeoutMs;
       while (this.pending > 0 && !this.terminated && Date.now() < deadline) {
         await sleep(100);
       }
+      // effectiveGoalTimeoutMs=Infinity 이면 deadline < 현재시간은 불가능
+      // → 이 블록은 safetyLimitEnabled=true 일 때만 실행됨
       if (this.pending > 0 && !this.terminated) {
         console.warn(`[Live] timeout for goal "${goal}" pending=${this.pending}`);
         // 시간 초과: late worker append 차단 + discussion_paused 기록
