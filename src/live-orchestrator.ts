@@ -218,11 +218,21 @@ export class LiveOrchestrator {
     this.decidedGoalRevIds.clear();
     this.deadlockWarned.clear();
 
+    // safetyLimitEnabled=false → worker의 spokenAt 한도(maxRoundsPerWorker)도 해제
+    // maxRoundsPerWorker=20 그대로두면 20라운드 후 모든 worker가 bail → round 완료 불가
+    const effectiveBudget: DiscussionBudget = budget.safetyLimitEnabled
+      ? budget
+      : { ...budget, maxRoundsPerWorker: Number.MAX_SAFE_INTEGER };
+
     // Provider 상태 스냅샷 로그 (버그 추적용)
     console.log("[providers] settings snapshot:", {
       gpt:    { enabled: providers.gpt.enabled,    hasKey: !!providers.gpt.apiKey,    model: providers.gpt.model },
       claude: { enabled: providers.claude.enabled, hasKey: !!providers.claude.apiKey, model: providers.claude.model },
       gemini: { enabled: providers.gemini.enabled, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model },
+    });
+    console.log("[budget] effective", {
+      maxRoundsPerWorker: effectiveBudget.maxRoundsPerWorker === Number.MAX_SAFE_INTEGER ? "unlimited" : effectiveBudget.maxRoundsPerWorker,
+      safetyLimitEnabled: budget.safetyLimitEnabled,
     });
 
     type WorkerHandle = { handle: (rev: Revision, id: number | null) => Promise<void> };
@@ -235,8 +245,8 @@ export class LiveOrchestrator {
         name:   isMock ? "GPT (Mock)" : "GPT",
         author: "gpt",
         worker: isMock
-          ? new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget)
-          : new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, budget, providers.gpt.model),
+          ? new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget)
+          : new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, effectiveBudget, providers.gpt.model),
         isMock,
       });
     } else {
@@ -250,8 +260,8 @@ export class LiveOrchestrator {
         name:   isMock ? "Claude (Mock)" : "Claude",
         author: "claude",
         worker: isMock
-          ? new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget, true)
-          : new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, budget, providers.claude.model),
+          ? new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget, true)
+          : new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, effectiveBudget, providers.claude.model),
         isMock,
       });
     } else {
@@ -265,8 +275,8 @@ export class LiveOrchestrator {
         name:   isMock ? "Gemini (Mock)" : "Gemini",
         author: "gemini",
         worker: isMock
-          ? new MockGeminiWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, budget)
-          : new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, budget, providers.gemini.model),
+          ? new MockGeminiWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget)
+          : new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, effectiveBudget, providers.gemini.model),
         isMock,
       });
     } else {
@@ -275,7 +285,7 @@ export class LiveOrchestrator {
 
     this.activeWorkerNames = workerEntries.map(e => e.name);
     this.evaluator         = new ConsensusEvaluator(workerEntries.map(e => e.author));
-    this.evalBudget        = budget;
+    this.evalBudget        = effectiveBudget;
     this.evalAutoConsensus = autoConsensus;
 
     const hasRealApi    = workerEntries.some(e => !e.isMock);
