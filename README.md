@@ -1,154 +1,321 @@
-# GCPT
+# GCPT — Reasoning Evolution Engine
 
-**Experimental AI reasoning evolution engine — tracks branch survival, question drift, and cognitive framework generation through structured multi-agent discussion.**
+> Experimental multi-agent system that tracks how arguments evolve, how questions transform, and what cognitive frameworks emerge through structured AI discussion.
 
-> ⚠️ **Alpha / Experimental Build**  
-> 연구 및 구조 실험 목적으로 개발 중입니다. API 없이도 Mock mode로 전체 기능을 체험할 수 있습니다.
-
----
-
-## 소개
-
-GCPT는 "AI들이 결론을 뽑아내는 앱"이 아닙니다.
-
-토론이 진행되는 동안:
-- 질문 자체가 어떻게 변형되는가 (Question Evolution)
-- 어떤 논리 branch가 살아남고 어떤 것이 소멸하는가 (Branch Survival)
-- 토론 전체가 어떤 사고 구조를 만들어냈는가 (Cognitive Framework Extraction)
-
-를 추적하는 **실험적 reasoning evolution 시스템**입니다.
-
-결론은 "승자 선택"이 아니라 **"토론 구조 전체가 어떤 형태로 수렴했는가"** 로 표현됩니다.
+**Not a debate app. Not a voting system.**  
+GCPT observes reasoning structure — how logic branches survive, how questions drift, and what kind of thinking a discussion generates as a whole.
 
 ---
 
-## Evolution Flow
+## Architecture
 
 ```
-Question (초기 질문)
-  ↓
-Multi-AI Debate
-  (GPT · Claude · Gemini 논증 / 반박 / 양보)
-  ↓
+Question (initial goal)
+       │
+       ▼
+Multi-Agent Discussion
+  ┌────────────────────────────────────┐
+  │  GPT · Claude · Gemini             │
+  │  propose → refine → concede →      │
+  │  synthesize (revision timeline)    │
+  └────────────────────────────────────┘
+       │
+       ▼
 Branch Evolution
-  (살아남는 논리 계보 vs 흡수·소멸되는 논거)
-  ↓
+  (which reasoning lineages survive; which get absorbed or collapse)
+       │
+       ▼
 Question Drift
-  (초기 질문이 어떻게 변형되는가)
-  ↓
+  (stable_topic → reframed → shifted → transformed)
+       │
+       ▼
 Structural Consensus
-  (표면 불일치 이면의 공유 구조 수렴)
-  ↓
+  (shared reasoning structure beneath surface disagreement)
+       │
+       ▼
 Cognitive Framework Extraction
-  (토론이 생성한 사고 구조 모델)
-  ↓
+  (what kind of thinking model did the discussion generate?)
+       │
+       ▼
 Evolutionary Resolution
-  (진화 결론 — winner가 아닌 구조적 수렴)
+  (structural conclusion — not winner selection)
 ```
 
 ---
 
-## 핵심 개념
+## Philosophy
 
-### Branch Survival
-각 proposal은 독립적인 논리 branch로 추적됩니다. refine / concede / synthesize 연결을 통해 살아남은 branch와 흡수·소멸된 branch를 분석합니다. 최종 결론은 "가장 많이 득표한 것"이 아니라 "논리 계보상 가장 강하게 살아남은 것"을 기반으로 합니다.
+GCPT's design philosophy has evolved through several shifts:
 
-### Question Evolution
-초기 질문(Goal)과 후반 surviving structure의 semantic centroid를 비교해 논점이 어떻게 이동했는지 분류합니다.
+```
+Winner Selection          →  "which AI got the most votes"
+      ↓
+Consensus Tracking        →  "did they converge on an answer"
+      ↓
+Branch Survival           →  "which reasoning lines held up over time"
+      ↓
+Question Evolution        →  "did the question itself change"
+      ↓
+Cognitive Framework Gen.  →  "what structure of thinking did this produce"
+```
 
-- `stable_topic` — 원래 질문 유지
-- `reframed_topic` — 같은 질문, 다른 관점
-- `shifted_topic` — 논의 중심축 이동
-- `transformed_topic` — 질문 자체가 새 질문으로 진화
+The final output is not "who won."  
+It is: **what kind of reasoning structure did the discussion evolve into.**
 
-Emergent Question을 자동 생성해 "토론이 실제로 답하려 한 질문"을 추출합니다.
+---
 
-### Structural Consensus
-AI들이 표면적으로 여전히 대립하더라도, 실제로는 동일한 개념 구조를 공유하고 있을 수 있습니다. Semantic Loop 감지를 통해 표면 불일치 이면의 구조 수렴을 탐지합니다.
-
-### Cognitive Framework Extraction
-토론 전체가 형성한 사고 구조 모델을 추출합니다.
-
-| Framework Type | 의미 |
-|---|---|
-| `governance_model` | 참여·제도·구조 기반 조율 프레임 |
-| `ethical_model` | 책임·가치·신뢰 중심 프레임 |
-| `systemic_model` | 상호의존적 시스템 메커니즘 프레임 |
-| `adaptive_model` | 피드백·실험·지속 적응 프레임 |
-| `dialectical_model` | 대립 → 합성 반복 변증법 프레임 |
-| `hybrid_framework` | 복합 사고 구조 |
-
-각 framework는 핵심 원리(foundation / driver / balancer / emergent / constraint), 개념 간 관계망(requires / limits / stabilizes / amplifies / balances), reasoning pattern을 포함합니다.
+## Core Systems
 
 ### Evolutionary Resolution
-최종 결론 유형:
 
-| Resolution Type | 의미 |
+Final conclusions are not derived from vote counts or evaluator scores.  
+`buildFinalResolution()` synthesizes:
+
+- surviving reasoning branches
+- structural consensus core
+- question evolution trajectory
+- unresolved tensions
+
+Resolution types:
+
+| Type | Meaning |
 |---|---|
-| `transformed_resolution` | 질문 자체가 진화한 후 도달한 결론 |
-| `synthesized_resolution` | 복수 입장의 합성으로 도달 |
-| `stable_answer` | 수렴 명확, 초기 질문 유지 |
-| `unresolved_dynamic_tension` | 긴장 유지 — 합의 없음이 결론 |
+| `transformed_resolution` | The question itself evolved; conclusion reflects that transformation |
+| `synthesized_resolution` | Multiple positions merged into a shared structural understanding |
+| `stable_answer` | Convergence with the original question frame preserved |
+| `unresolved_dynamic_tension` | Persistent structural conflict — the tension itself is the result |
+
+---
+
+### Question Evolution
+
+Compares the semantic centroid of the initial 20% of proposals against the final 20%.  
+Classifies how the question shifted:
+
+| Drift Type | Description |
+|---|---|
+| `stable_topic` | Original question maintained throughout |
+| `reframed_topic` | Same question, new framing or perspective |
+| `shifted_topic` | Central axis of discussion moved |
+| `transformed_topic` | The question itself evolved into a new question |
+
+Generates an **Emergent Question** — the question the discussion was actually trying to answer by the end, derived from surviving branch content rather than summarization.
+
+Tracks per-revision **Question Pressure** (preserve / reframe / expand / redirect / replace) and detects **Question Lock** actors who consistently preserved the original framing rather than evolving it.
+
+---
+
+### Branch Survival
+
+Each proposal is tracked as a node in a reasoning lineage.  
+Connections:
+
+- `refines` — builds on a prior proposal
+- `concedes` — absorbs a counter-argument
+- `synthesizes` — merges two lineages
+- `criticizes` — challenges without adoption
+
+Branches are scored by:
+
+- `semanticPersistence` — how long the reasoning keywords survived
+- `innovationRetention` — how much of their novel content was carried forward
+- `repeatedDefenseRatio` — how often the branch defended without evolving
+
+**Dominant branches** are those that either survived through evolution or absorbed competing branches into themselves.
+
+---
+
+### Structural Consensus
+
+Two actors can share a deep reasoning structure while disagreeing on surface framing.  
+`detectPseudoDebate()` identifies this state — Semantic Loop — where:
+
+- surface disagreement is maintained
+- semantic drift score is low (concepts barely changing)
+- shared core concepts are strong across all actors
+
+When detected, `buildStructuralConsensus()` extracts:
+
+- the shared structural core
+- each actor's surface position vs. their structural contribution
+- a structural note describing the convergence
+
+This can trigger `pseudo_convergence` — automatic termination when continued debate would be redundant.
+
+---
+
+### Cognitive Framework Extraction
+
+After a discussion, `extractCognitiveFramework()` determines what type of thinking model the debate generated as a whole.
+
+Framework types:
+
+| Type | Characteristics |
+|---|---|
+| `governance_model` | Participation, institutional structure, regulatory framing |
+| `ethical_model` | Responsibility, trust, value-based reasoning |
+| `systemic_model` | Interdependence, feedback loops, mechanism thinking |
+| `adaptive_model` | Iteration, feedback, continuous adjustment |
+| `dialectical_model` | Opposition → synthesis cycles; contradiction-driven |
+| `hybrid_framework` | Multiple structural modes active simultaneously |
+
+For each framework, the system extracts:
+
+- **Core Principles** — each concept classified as `foundation` / `driver` / `balancer` / `emergent` / `constraint`
+- **Structural Relationships** — directed relations between concepts: `requires` / `limits` / `stabilizes` / `amplifies` / `balances`
+- **Reasoning Pattern** — how the discussion evolved: `conflict_resolution` / `dialectical_synthesis` / `recursive_adaptation` / `system_balancing` / `incremental_refinement`
+- **Generated Perspective** — the new viewpoint the discussion produced, not a summary
+
+> A cognitive framework is not a summary of what was said.  
+> It is a model of what kind of thinking the discussion generated.
+
+---
 
 ### Convergence Freeze Detection
-argument entropy가 붕괴하고 novelty가 지속 소진될 때 자동 감지합니다.
 
-- `branch_frozen` — 동일 semantic defend 반복
-- `semantic_convergence` — actor 간 의미 유사도 과수렴
-- `discussion_exhausted` — novelty 완전 소진 + 지배 branch 생존
+Monitors for structural stagnation:
 
-### Semantic Loop Collapse
-actor들이 표면적으로 계속 대립하지만 실제 의미 drift가 거의 없는 상태(pseudo-debate)를 감지해 자동 종료합니다.
+| Freeze Type | Trigger |
+|---|---|
+| `branch_frozen` | Repeated identical semantic defense, argument entropy collapsed |
+| `semantic_convergence` | Actor keyword similarity exceeded threshold (>0.88) |
+| `discussion_exhausted` | Novelty fully depleted + dominant branch still surviving |
+
+When detected, discussion terminates automatically with a structured explanation.
+
+---
 
 ### Evolution Pressure System
-각 AI actor의 논리 진화 기여도를 추적합니다. defend 반복 비율이 높은 actor는 semantic decay로 표시되고, refine / concede / synthesize 중심의 actor는 evolution driver로 집계됩니다.
+
+Tracks each actor's contribution to reasoning evolution:
+
+- **Innovation Moments** — proposals that introduced genuinely new conceptual territory
+- **Actor Momentum** — weighted sum of refine / concede / synthesize actions
+- **Semantic Decay Actors** — actors whose repeated defense lowered the discussion's novelty rate
+
+Actors with high defend-only ratios are flagged as reducing evolution pressure.
+
+---
 
 ### Segment-Based Continuation
-사용자가 토론 중간에 개입(Interjection)하면 새 segment가 시작됩니다.
 
-- 이전 segment의 evaluator score는 리셋
-- 이전 segment의 결론·핵심 개념·미해결 충돌은 memory context로 유지
-- segment별 독립 분석 + 통합 meta-evolution 분석 제공
+When a user interjects during a discussion:
 
----
+1. Current evaluator scores reset — the new segment is evaluated independently
+2. A new discussion segment begins with fresh novelty/convergence tracking
+3. Conclusions, key concepts, and unresolved conflicts from prior segments persist as **memory context** injected into AI prompts
 
-## 분석 시스템 (Analysis Modal)
-
-토론 종료 후 열리는 분석 화면은 다음 레이어를 표시합니다:
-
-| 레이어 | 내용 |
-|---|---|
-| **생성된 사고 프레임** | cognitive framework type, 핵심 원리, 개념 관계망, reasoning pattern, 생성된 관점 |
-| **최종 진화 구조** | resolution type, primary conclusion, 논리 진화 궤적, 미해결 긴장 |
-| **질문 진화** | 초기 → 중간 → emergent question, 신규/소멸 개념, actor lock/redirect |
-| **Meta Evolution** | segment 간 사고 흐름 변화, concept transition, interjection 영향 |
-| **논리 수렴 과정** | novelty decay, convergence history, phase flow |
-| **생존 Branch** | dominant branch, semantic persistence, innovation retention |
-| **Argument Graph** | 논거 간 관계 그래프, synthesis lineage |
-| **Concept Gravity** | 토론을 지배한 개념 ranking |
-| **Structural Consensus Map** | 표면 충돌 vs 공유 구조 시각화 |
+Each segment receives isolated analysis. The Analysis Modal shows:
+- Per-segment tabs with independent branch/novelty/convergence data
+- A unified **통합 분析** tab with Meta Evolution across segments
 
 ---
 
-## 기술 스택
+### Meta Evolution Analysis
 
-| 분류 | 기술 |
+Analyzes how reasoning evolved across segments (when multiple interjections occurred):
+
+- **Concept Transitions** — which concepts persisted, which were abandoned, which were introduced
+- **Topic Shift Type** — `refinement` / `pivot` / `expansion` / `contradiction` / `synthesis`
+- **Interjection Impact** — whether user intervention redirected, constrained, or validated the discussion
+
+---
+
+## Analysis Modal
+
+After each discussion, the Analysis Modal presents structured layers:
+
+```
+┌─────────────────────────────────────────┐
+│  Cognitive Framework                    │  ← what thinking model emerged
+│  (type · principles · relationships ·  │
+│   reasoning pattern · perspective)      │
+├─────────────────────────────────────────┤
+│  Evolutionary Resolution                │  ← structural conclusion
+│  (type · trajectory · tensions)         │
+├─────────────────────────────────────────┤
+│  Question Evolution                     │  ← how the question transformed
+│  (drift type · emergent question ·      │
+│   actor lock/redirect)                  │
+├─────────────────────────────────────────┤
+│  Meta Evolution  [multi-segment only]   │  ← segment-to-segment shifts
+├─────────────────────────────────────────┤
+│  ▼ Full Analysis (collapsed)            │
+│    · Convergence Flow                   │
+│    · Branch Survival                    │
+│    · Argument Graph                     │
+│    · Concept Gravity                    │
+│    · Structural Consensus Map           │
+│    · Semantic Loop / Repeated Frames    │
+│    · Evolution Pressure                 │
+└─────────────────────────────────────────┘
+```
+
+<!-- Analysis UI screenshots would go here -->
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
 |---|---|
-| 런타임 | Electron 28 + Node.js |
-| 프레임워크 | electron-vite 5 |
+| Runtime | Electron 28 + Node.js |
+| Framework | electron-vite 5 |
 | UI | React 19 + TypeScript |
-| AI | OpenAI GPT / Anthropic Claude / Google Gemini |
-| 빌드 | Vite 7, TypeScript 6 |
+| AI Providers | OpenAI GPT / Anthropic Claude / Google Gemini |
+| Build | Vite 7, TypeScript 6 |
+
+All analysis runs locally — no external analysis API.  
+AI providers are used only for generating proposals; all reasoning analysis is computed in-process.
 
 ---
 
-## 실행 방법
+## Project Structure
 
-### 요구 사항
+```
+gcpt/
+├── src/
+│   ├── live-orchestrator.ts        # live discussion engine, phase control
+│   ├── analysis.ts                 # analysis pipeline coordinator
+│   ├── cognitive-framework.ts      # framework type detection + extraction
+│   ├── final-resolution.ts         # evolutionary resolution builder
+│   ├── question-evolution.ts       # question drift + emergent question
+│   ├── meta-evolution.ts           # segment-level meta analysis
+│   ├── semantic-loop.ts            # pseudo-debate + structural consensus
+│   ├── concept-gravity.ts          # concept influence scoring
+│   ├── branch-survival.ts          # reasoning lineage tracking
+│   ├── argument-graph.ts           # argument relation graph
+│   ├── convergence-freeze.ts       # entropy collapse detection
+│   ├── evolution-pressure.ts       # actor momentum + innovation moments
+│   ├── synthesis.ts                # consensus synthesis
+│   ├── novelty-tracker.ts          # round-by-round novelty rates
+│   ├── phase-controller.ts         # discussion phase management
+│   ├── consensus-evaluator.ts      # convergence verdict engine
+│   ├── final-conclusion.ts         # final conclusion resolver (legacy)
+│   ├── types.ts                    # all shared types
+│   └── workers/
+│       ├── gpt.ts / claude.ts / gemini.ts
+│       └── segment-context.ts      # memory context builder
+│
+└── app/renderer/src/
+    ├── AnalysisModal.tsx            # 7-layer analysis modal
+    ├── CognitiveFrameworkView.tsx   # framework type + principles + relations
+    ├── FinalResolutionView.tsx      # resolution type + trajectory + tensions
+    ├── QuestionEvolutionView.tsx    # question drift + emergent question
+    ├── MetaEvolutionView.tsx        # segment transition view
+    ├── StructuralAnalysisView.tsx   # semantic loop + concept gravity + map
+    └── ArgumentGraphView.tsx        # argument graph visualization
+```
+
+---
+
+## Setup
+
+### Requirements
 - Node.js 18+
 - npm 9+
 
-### 설치
+### Install
 
 ```bash
 git clone https://github.com/cksdud32/gcpt.git
@@ -156,131 +323,86 @@ cd gcpt
 npm install
 ```
 
-### API 키 설정
+### API Keys
 
 ```bash
 cp .env.example .env
-# .env 파일에 API 키 입력
 ```
-
-API 키 없이도 Mock mode로 모든 기능을 체험할 수 있습니다.
-
-### 개발 모드
-
-```bash
-npm run app
-```
-
-### 프로덕션 빌드
-
-```bash
-npm run dist:win   # Windows 패키지
-npm run app:build  # 일반 빌드
-```
-
----
-
-## API 키 설정
 
 ```env
-OPENAI_API_KEY=sk-...       # GPT 실제 응답
-GEMINI_API_KEY=             # Gemini 실제 응답
-ANTHROPIC_API_KEY=          # Claude 실제 응답
+OPENAI_API_KEY=sk-...       # GPT
+GEMINI_API_KEY=             # Gemini
+ANTHROPIC_API_KEY=          # Claude
 ```
 
-키가 없는 경우 해당 AI는 자동으로 Mock worker로 대체됩니다.
+All three providers are optional. Any missing key falls back to a mock worker. The mock mode covers the full analysis pipeline — all reasoning analysis features work without API keys.
+
+### Run
+
+```bash
+npm run app           # development
+npm run dist:win      # Windows production build
+```
 
 ---
 
-## 사용 가이드
+## Usage
 
-### Mock Mode (API 키 불필요)
+### Mock Mode (no API keys required)
 
-1. 앱 실행 → 좌측 사이드바에서 시나리오 선택 (normal / delay / stress 등)
-2. `▶ 실행` 클릭
-3. 토론 종료 후 `분석 보기` → 생성된 사고 프레임, 질문 진화, 논리 궤적 확인
+1. Launch app → select scenario from sidebar (normal / delay / stress / mixed)
+2. Run → discussion completes automatically
+3. Open **Analysis Modal** → explore cognitive framework, question evolution, branch survival
 
-### Live Discussion Mode
+### Live Discussion
 
-1. `⚡ Live OFF` → `⚡ Live ON` 전환
-2. 활성화할 AI 선택 (GPT / Claude / Gemini)
-3. 주제 입력 후 실행
-4. 토론 중 `Interjection`으로 개입 → 새 segment 시작
-5. 종료 후 분석 모달에서 evolution layer 탐색
-
----
-
-## 프로젝트 구조
-
-```
-gcpt/
-├── app/
-│   ├── main/         # Electron main process (IPC 핸들러)
-│   ├── preload/      # contextBridge API
-│   └── renderer/     # React UI
-│       └── src/
-│           ├── AnalysisModal.tsx      # 분석 모달 (7-layer)
-│           ├── CognitiveFrameworkView.tsx
-│           ├── FinalResolutionView.tsx
-│           ├── QuestionEvolutionView.tsx
-│           ├── MetaEvolutionView.tsx
-│           ├── StructuralAnalysisView.tsx
-│           └── ArgumentGraphView.tsx
-└── src/
-    ├── live-orchestrator.ts      # Live 토론 엔진
-    ├── analysis.ts               # 분석 파이프라인 통합
-    ├── cognitive-framework.ts    # Cognitive Framework Extraction
-    ├── final-resolution.ts       # Evolutionary Resolution
-    ├── question-evolution.ts     # Question Evolution Layer
-    ├── meta-evolution.ts         # Segment-level Meta Evolution
-    ├── semantic-loop.ts          # Semantic Loop / Pseudo-debate Detection
-    ├── concept-gravity.ts        # Concept Gravity System
-    ├── branch-survival.ts        # Branch Survival Resolver
-    ├── argument-graph.ts         # Argument Graph Builder
-    ├── convergence-freeze.ts     # Convergence Freeze Detection
-    ├── evolution-pressure.ts     # Evolution Pressure System
-    ├── synthesis.ts              # Consensus Synthesis
-    └── final-conclusion.ts       # Final Conclusion Resolver
-```
+1. Toggle `Live OFF` → `Live ON`
+2. Select active AI providers (GPT / Claude / Gemini)
+3. Enter a topic → discussion begins
+4. Optionally interject mid-discussion → new segment starts
+5. After completion → explore full analysis stack
 
 ---
 
 ## Recent Updates
 
-| 버전 | 추가 내용 |
+| System | Description |
 |---|---|
-| Cognitive Framework | 토론이 생성한 사고 프레임 추출 — frameworkType / corePrinciples / structuralRelationships / reasoningPattern / generatedPerspective |
-| Evolutionary Resolution | winner 선택 대신 진화 구조 기반 최종 결론 — transformed / synthesized / stable / unresolved_dynamic_tension |
-| Question Evolution Layer | 초기 vs 후반 semantic centroid 비교, emergent question 생성, question pressure per-revision, actor lock detection |
-| Branch Survival Resolver | refine/concede/synthesize lineage 기반 branch 생존 분석, semantic persistence / innovation retention 점수화 |
-| Cognitive Framework | 위 참조 |
-| Evolution Pressure System | actor별 논리 진화 기여도, semantic decay actor 감지, innovation moment 추적 |
-| Convergence Freeze Detection | entropy collapse + novelty 소진 → branch_frozen / semantic_convergence / discussion_exhausted 분류 |
-| Segment-based Continuation | 사용자 개입 → 새 segment, evaluator 리셋, 이전 reasoning memory 유지 |
-| Meta Evolution Analysis | segment 간 concept transition, interjection 영향, topicShiftType 분류 |
-| Semantic Loop Collapse | pseudo-debate 감지, structural consensus 추출, 자동 종료 |
-| Structural Analysis | SemanticLoopView / ConceptGravityView / StructuralMapView |
-| Provider Control | GPT / Claude / Gemini ON/OFF, API key 분리, 모델 선택 |
+| **Cognitive Framework Extraction** | Detects framework type from debate structure; extracts principles, relationships, reasoning pattern, generated perspective |
+| **Evolutionary Resolution** | Structure-based final conclusion replacing winner selection; transformed / synthesized / stable / dynamic-tension types |
+| **Question Evolution Layer** | Semantic centroid comparison, emergent question generation, per-revision pressure classification, actor lock detection |
+| **Semantic Loop Collapse** | Pseudo-debate detection, structural consensus extraction, auto-termination on convergence |
+| **Branch Survival Resolver** | Refine/concede/synthesize lineage tracking; semantic persistence and innovation retention scoring |
+| **Evolution Pressure System** | Actor momentum tracking, innovation moment detection, semantic decay flagging |
+| **Convergence Freeze Detection** | Entropy collapse + novelty exhaustion; branch_frozen / semantic_convergence / discussion_exhausted |
+| **Segment Continuation** | Evaluator reset per segment, reasoning memory propagation, isolated per-segment analysis |
+| **Meta Evolution Analysis** | Segment-to-segment concept transition, interjection impact, topic shift classification |
+| **Provider Control** | Independent enable/disable per provider, API key separation, per-provider model selection |
 
 ---
 
-## Known Issues
+## GitHub Repository
 
-- **한글 콘솔 출력 깨짐**: Windows 기본 터미널에서 한글 로그가 깨질 수 있습니다. Windows Terminal 또는 `chcp 65001` 권장.
-- **Gemini parseFail**: 응답이 길어질 경우 드물게 파싱 실패. 토론 흐름에는 영향 없음.
-- **API Rate Limit**: 무료 티어 사용 시 RPM 제한으로 일부 응답이 스킵될 수 있습니다.
+**Short description:**  
+Experimental reasoning evolution engine for tracking branch survival, question drift, and cognitive framework generation.
 
----
+**Long description:**  
+GCPT is an experimental multi-agent reasoning system focused on evolutionary resolution rather than winner selection. It analyzes how arguments evolve, how questions transform, and what cognitive frameworks emerge through structured AI discussion.
 
-## 주의사항
-
-- `.env` 파일에 API 키 입력 시 **절대로 Git에 커밋하지 마세요**
-- `.gitignore`에 `.env`가 포함되어 있으나 주의 필요
-- API 사용에 따른 과금이 발생할 수 있습니다
-- 이 프로젝트는 Alpha 단계의 실험적 빌드입니다
+**Suggested topics:**  
+`ai` `multi-agent` `reasoning` `argumentation` `cognitive-framework` `semantic-analysis` `evolutionary-systems` `llm` `typescript` `electron`
 
 ---
 
-## 라이선스
+## Notes
 
-MIT License — [LICENSE](LICENSE) 참조
+- `.env` files with real API keys must never be committed — `.gitignore` covers this but verify manually
+- Alpha stage — internal APIs may change without notice
+- API usage incurs cost depending on provider tier and discussion length
+- All reasoning analysis (branch survival, framework extraction, etc.) runs locally without additional API calls
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
