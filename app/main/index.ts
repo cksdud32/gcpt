@@ -9,15 +9,20 @@ import { join } from "path";
 import type { WsLinkedContext } from "../../src/workspace-providers";
 import { makeClaudeProvider, makeMockProvider } from "../../src/workspace-providers";
 import { runMode, runCustomGoal } from "../../src/test-modes";
-import type { DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig } from "../../src/types";
+import type { DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, InteractionStyle } from "../../src/types";
 import { DEPTH_BUDGETS, DEFAULT_PROVIDER_MODELS } from "../../src/types";
 import { MOCK_CONFIGS } from "../../src/orchestrator";
 import { LiveOrchestrator } from "../../src/live-orchestrator";
+import { ConversationOrchestrator } from "../../src/conversation-orchestrator";
 
 // ─── Provider Settings ────────────────────────────────────────────
 
 function getProviderSettingsPath(): string {
   return join(app.getPath("userData"), "provider-settings.json");
+}
+
+function isFirstRunCheck(): boolean {
+  return !existsSync(getProviderSettingsPath());
 }
 
 function defaultProviders(): ProvidersConfig {
@@ -84,6 +89,13 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
+  // 최초 실행 시 renderer에 알려 API 설정 패널 자동 오픈
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (isFirstRunCheck()) {
+      mainWindow?.webContents.send("app:first-run");
+    }
+  });
+
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
@@ -124,7 +136,7 @@ ipcMain.handle("provider:testConnection", async (_event, provider: "gpt" | "clau
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const OpenAI = require("openai").default ?? require("openai");
       const client = new OpenAI({ apiKey: cfg.apiKey });
-      await client.chat.completions.create({ model: cfg.model || "gpt-4o-mini", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
+      await client.chat.completions.create({ model: cfg.model || "gpt-5-mini", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
     } else if (provider === "claude") {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const Anthropic = require("@anthropic-ai/sdk").default ?? require("@anthropic-ai/sdk");
@@ -297,10 +309,12 @@ ipcMain.handle("load-session", async () => {
 
 // ─── Live Discussion ──────────────────────────────────────────────
 
-let liveOrchestrator: LiveOrchestrator | null = null;
+let liveOrchestrator:         LiveOrchestrator         | null = null;
+let conversationOrchestrator: ConversationOrchestrator | null = null;
 
 // 기본 safety timeout — budget.safetyTimeoutMs가 있으면 그 값을 사용
-const DEFAULT_DISCUSSION_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_DISCUSSION_TIMEOUT_MS      = 10 * 60 * 1000;
+const CONVERSATION_TIMEOUT_MS            =  5 * 60 * 1000;
 
 // fire-and-forget: 즉시 { ok: true } 반환 후 background에서 토론 실행.
 // 중간 업데이트는 discussion:update 로, 완료는 discussion:done 으로 push.
@@ -312,13 +326,9 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   depth?: DiscussionDepth;
   consensusMode?: ConsensusMode;
   safetyLimitEnabled?: boolean;
+  interactionStyle?: InteractionStyle;
 }) => {
-  const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto", safetyLimitEnabled } = payload;
-  const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced };
-  // 런타임 safetyLimitEnabled 오버라이드 (UI 토글)
-  if (safetyLimitEnabled !== undefined) budget.safetyLimitEnabled = safetyLimitEnabled;
-  const timeoutMs = budget.safetyTimeoutMs ?? DEFAULT_DISCUSSION_TIMEOUT_MS;
-  console.log("[main] START LIVE DISCUSSION IPC RECEIVED", goals, "mode=", discussionMode, "depth=", depth, "consensus=", consensusMode);
+  const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto", safetyLimitEnabled, interactionStyle = "debate" } = payload;
 
   // 활성화된 provider가 2개 미만이면 실행 차단
   const enabledCount = Object.values(currentProviders).filter(p => p.enabled).length;
@@ -327,40 +337,76 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
     return { ok: false, error: "최소 2개의 AI provider를 활성화해야 합니다" };
   }
 
-  // 기존 세션(continuation 대기 포함)을 종료하고 새 세션 시작
+  // 기존 세션 종료
   liveOrchestrator?.terminate();
+  conversationOrchestrator?.terminate();
+  liveOrchestrator         = null;
+  conversationOrchestrator = null;
 
-  const orch = new LiveOrchestrator(
-    (history, topics) => {
-      safeSend("discussion:update", { history, topics });
-    },
-    (msg) => safeSend("discussion:status", msg),
-  );
-  liveOrchestrator = orch;
-
-  // Hard emergency timeout: orchestrator hang 방지 (safetyLimitEnabled 관계없이 항상 동작)
-  const timeoutId = setTimeout(() => {
-    if (liveOrchestrator === orch) {
-      console.warn("[main] hard emergency timeout — forcing terminate");
-      orch.hardTerminate(); // discussion_paused(hard_timeout) append + onGoalsDone 호출
-      liveOrchestrator = null;
-    }
-  }, timeoutMs);
-
-  // 시작 시점의 provider 설정을 스냅샷으로 사용 (실행 중 변경은 다음 토론부터 적용)
+  // 시작 시점의 provider 설정 스냅샷
   const snapshotProviders = {
     gpt:    { ...currentProviders.gpt },
     claude: { ...currentProviders.claude },
     gemini: { ...currentProviders.gemini },
   };
-  console.log("[providers] snapshot at discussion start:", {
-    gpt:    { enabled: snapshotProviders.gpt.enabled,    hasKey: !!snapshotProviders.gpt.apiKey,    model: snapshotProviders.gpt.model },
-    claude: { enabled: snapshotProviders.claude.enabled, hasKey: !!snapshotProviders.claude.apiKey, model: snapshotProviders.claude.model },
-    gemini: { enabled: snapshotProviders.gemini.enabled, hasKey: !!snapshotProviders.gemini.apiKey, model: snapshotProviders.gemini.model },
-  });
+  console.log("[main] START LIVE DISCUSSION  goals=", goals, "style=", interactionStyle, "mode=", discussionMode);
+
+  // ── Conversation Mode ────────────────────────────────────────────
+  console.log("[ipc] interactionStyle =", interactionStyle);
+  if (interactionStyle === "conversation") {
+    console.log("[ipc] selected orchestrator = ConversationOrchestrator");
+    const convOrch = new ConversationOrchestrator(
+      (history, topics) => safeSend("discussion:update", { history, topics }),
+      (msg) => safeSend("discussion:status", msg),
+    );
+    conversationOrchestrator = convOrch;
+
+    const timeoutId = setTimeout(() => {
+      if (conversationOrchestrator === convOrch) {
+        console.warn("[main] conversation hard timeout — forcing terminate");
+        convOrch.hardTerminate();
+        conversationOrchestrator = null;
+      }
+    }, CONVERSATION_TIMEOUT_MS);
+
+    const goal = goals[0] ?? "";
+    convOrch.runConversation(goal, snapshotProviders, undefined, (snapshot) => {
+      console.log("[main] conversation done  revisionCount=", snapshot.revisionCount);
+      safeSend("discussion:done", snapshot);
+    })
+    .catch(err => {
+      console.error("[main] conversation error:", err);
+      safeSend("discussion:done", null);
+    })
+    .finally(() => {
+      clearTimeout(timeoutId);
+      if (conversationOrchestrator === convOrch) conversationOrchestrator = null;
+    });
+
+    return { ok: true };
+  }
+
+  // ── Debate Mode (LiveOrchestrator) ───────────────────────────────
+  console.log("[ipc] selected orchestrator = LiveOrchestrator");
+  const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced };
+  if (safetyLimitEnabled !== undefined) budget.safetyLimitEnabled = safetyLimitEnabled;
+  const timeoutMs = budget.safetyTimeoutMs ?? DEFAULT_DISCUSSION_TIMEOUT_MS;
+
+  const orch = new LiveOrchestrator(
+    (history, topics) => safeSend("discussion:update", { history, topics }),
+    (msg) => safeSend("discussion:status", msg),
+  );
+  liveOrchestrator = orch;
+
+  const timeoutId = setTimeout(() => {
+    if (liveOrchestrator === orch) {
+      console.warn("[main] hard emergency timeout — forcing terminate");
+      orch.hardTerminate();
+      liveOrchestrator = null;
+    }
+  }, timeoutMs);
 
   orch.runGoals(goals, discussionMode, budget, (snapshot) => {
-    // 초기 goal 완료 또는 interjection 사이클 완료 시 호출됨
     console.log("[main] discussion:done revisionCount=", snapshot.revisionCount);
     safeSend("discussion:done", snapshot);
   }, consensusMode, snapshotProviders)
@@ -369,9 +415,10 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
     safeSend("discussion:done", null);
   })
   .finally(() => {
+    // hard timeout 타이머 정리 — liveOrchestrator는 null로 만들지 않음.
+    // 토론이 종료된 후에도 추가 의견(user_interjection)으로 새 segment를 시작할 수 있어야 함.
+    // 새 start-live-discussion 수신 시 위쪽 liveOrchestrator?.terminate() + null 할당이 처리함.
     clearTimeout(timeoutId);
-    // 같은 인스턴스인 경우만 null 처리 (새 세션이 이미 시작됐을 수 있음)
-    if (liveOrchestrator === orch) liveOrchestrator = null;
   });
 
   return { ok: true };
@@ -379,16 +426,27 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
 
 // { ok: true } 반환 — renderer가 성공 여부를 알 수 있음
 ipcMain.handle("discussion:interject", (_event, message: string) => {
+  const hasOrch = !!liveOrchestrator;
+  console.log("[main] interject received", {
+    hasOrchestrator: hasOrch,
+    message: message.slice(0, 40),
+  });
   if (!liveOrchestrator) {
-    console.log("[main] interject ignored — no active session");
+    console.log("[main] interject ignored — no orchestrator (new discussion not started yet)");
     return { ok: false };
   }
+  // isStopped 여부와 무관하게 interject 호출 — LiveOrchestrator 내부에서 new segment로 재개
   liveOrchestrator.interject(message);
   return { ok: true };
 });
 
-// until_consensus 모드 전용: 사용자가 토론 중지 → paused revision append 후 done 전송
+// 토론/대화 중지
 ipcMain.handle("discussion:stop", () => {
+  if (conversationOrchestrator) {
+    console.log("[main] stopConversation requested");
+    conversationOrchestrator.stopDiscussion();
+    return { ok: true };
+  }
   if (!liveOrchestrator) {
     console.log("[main] stop ignored — no active session");
     return { ok: false };

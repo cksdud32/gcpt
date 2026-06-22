@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect, useRef, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 import type { RunResult } from "../../../src/test-modes";
-import type { Author, Revision, Topic, DiscussionDepth, ConsensusMode } from "../../../src/types";
+import type { Author, Revision, Topic, Proposal, DiscussionDepth, ConsensusMode, DiscussionAnalysis, InteractionStyle } from "../../../src/types";
 import { DEPTH_LABELS, CONSENSUS_LABELS } from "../../../src/types";
+import { analyzeDiscussion } from "../../../src/analysis";
+import { AnalysisModal } from "./AnalysisModal";
 import type { Metrics } from "../../../src/metrics";
 import { computeAggregation, computeStances, computeStanceHistory, normalizeProposal } from "../../../src/aggregation";
 import type { WorkspacePlan, WorkspacePlanStep } from "../../../src/workspace-providers";
@@ -133,11 +135,13 @@ declare global {
         mode?: DiscussionMode;
         depth?: DiscussionDepth;
         consensusMode?: ConsensusMode;
+        safetyLimitEnabled?: boolean;
       }) => Promise<{ ok: boolean; error?: string }>;
       sendInterjection:    (message: string) => Promise<{ ok: boolean }>;
       stopDiscussion:      ()                     => Promise<{ ok: boolean }>;
       acceptConsensus:     ()                     => Promise<{ ok: boolean }>;
       selectProposal:      (revisionId: number)  => Promise<{ ok: boolean }>;
+      onFirstRun:         (cb: () => void) => () => void;
       onDiscussionUpdate: (cb: (u: { history: Revision[]; topics: Topic[] }) => void) => () => void;
       onDiscussionStatus: (cb: (msg: string) => void) => () => void;
       onDiscussionDone:   (cb: (result: RunResult | null) => void) => () => void;
@@ -479,7 +483,7 @@ interface ProvidersConfig {
   gemini: ProviderSettings;
 }
 const DEFAULT_PROVIDERS: ProvidersConfig = {
-  gpt:    { enabled: false, apiKey: "", model: "gpt-4o-mini" },
+  gpt:    { enabled: false, apiKey: "", model: "gpt-5-mini" },
   claude: { enabled: false, apiKey: "", model: "claude-haiku-4-5-20251001" },
   gemini: { enabled: false, apiKey: "", model: "gemini-2.5-flash" },
 };
@@ -512,15 +516,19 @@ export default function App() {
   // interjection(continuation) 중인지 추적 — done 시 append vs replace 결정
   const isInterjectionRef  = useRef(false);
 
-  // ── 토론 모드 / 깊이 / 수렴 방식 ────────────────────────────────
+  // ── 토론 모드 / 깊이 / 수렴 방식 / 대화 방식 ──────────────────────
   const [discussionMode,      setDiscussionMode]      = useState<DiscussionMode>("general");
   const [discussionDepth,     setDiscussionDepth]     = useState<DiscussionDepth>("balanced");
   const [consensusMode,       setConsensusMode]       = useState<ConsensusMode>("auto");
   const [safetyLimitEnabled,  setSafetyLimitEnabled]  = useState(true);
+  const [interactionStyle,    setInteractionStyle]    = useState<InteractionStyle>("debate");
 
   // ── Provider Settings ─────────────────────────────────────────────
   const [providerSettings, setProviderSettings] = useState<ProvidersConfig>(DEFAULT_PROVIDERS);
   const [providerSettingsOpen, setProviderSettingsOpen] = useState(false);
+
+  // ── Analysis Modal ────────────────────────────────────────────────
+  const [analysisModal, setAnalysisModal] = useState<{ topic: Topic; analysis: DiscussionAnalysis } | null>(null);
 
   // ── Live Discussion 상태 ─────────────────────────────────────────
   const [liveEnabled,    setLiveEnabled]    = useState(false); // 실행 방식 토글
@@ -589,6 +597,12 @@ export default function App() {
     window.api.getProviderSettings()
       .then(cfg => setProviderSettings(cfg))
       .catch(e => console.error("[renderer] getProviderSettings failed:", e));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 최초 실행 — API 설정 패널 자동 오픈 ────────────────────────
+  useEffect(() => {
+    const cleanup = window.api.onFirstRun(() => setProviderSettingsOpen(true));
+    return cleanup;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── localStorage 복원 (mount 1회) ───────────────────────────────
@@ -926,7 +940,10 @@ export default function App() {
       setSelectedTopicIdx(null);
       setSelectedRevId(null);
 
-      const res = await window.api.startLiveDiscussion({ goals, mode: dm, depth, consensusMode: cm, safetyLimitEnabled });
+      console.log("[ui] selected interactionStyle =", interactionStyle);
+      const _ipcPayload = { goals, mode: dm, depth, consensusMode: cm, safetyLimitEnabled, interactionStyle };
+      console.log("[ipc payload]", _ipcPayload);
+      const res = await window.api.startLiveDiscussion(_ipcPayload);
       if (!res.ok) {
         console.error("[renderer] startLiveDiscussion failed:", res.error);
         setAiProcessing(false);
@@ -1079,13 +1096,22 @@ export default function App() {
     );
     const apiCalls = proposals.length;
     const lastTopic = liveResult.topics[liveResult.topics.length - 1];
-    const agg = lastTopic ? computeAggregation(lastTopic) : [];
+    const agg = lastTopic && lastTopic.interactionStyle !== "conversation" ? computeAggregation(lastTopic) : [];
     const leadingValue = agg.length > 0 ? agg[0].value : null;
     return `합의 도달 모드 · API ${apiCalls}회${leadingValue ? ` · 현재 우세: ${leadingValue}` : ""}`;
   }, [aiProcessing, discussionDepth, liveStatus, liveResult]);
 
   return (
     <div className="app">
+      {analysisModal && (
+        <AnalysisModal
+          goal={analysisModal.topic.goal}
+          analysis={analysisModal.analysis}
+          topic={analysisModal.topic}
+          history={result?.history}
+          onClose={() => setAnalysisModal(null)}
+        />
+      )}
       <Header
         view={view}
         onViewChange={setView}
@@ -1126,6 +1152,8 @@ export default function App() {
               onConsensusModeChange={setConsensusMode}
               safetyLimitEnabled={safetyLimitEnabled}
               onSafetyLimitEnabledChange={setSafetyLimitEnabled}
+              interactionStyle={interactionStyle}
+              onInteractionStyleChange={setInteractionStyle}
               providerSettings={providerSettings}
               onProviderSettingsChange={async (next) => {
                 setProviderSettings(next);
@@ -1143,6 +1171,7 @@ export default function App() {
                   onOpenInWorkspace={handleOpenInWorkspace}
                   onDeleteTopic={!running && !aiProcessing ? handleDeleteTopic : undefined}
                   executionRunning={running || aiProcessing}
+                  onShowAnalysis={(topic, analysis) => setAnalysisModal({ topic, analysis })}
                 />
               </ErrorBoundary>
               <ErrorBoundary label="Discussion Panel">
@@ -1302,6 +1331,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
                    discussionDepth, onDiscussionDepthChange,
                    consensusMode, onConsensusModeChange,
                    safetyLimitEnabled, onSafetyLimitEnabledChange,
+                   interactionStyle, onInteractionStyleChange,
                    providerSettings, onProviderSettingsChange,
                    providerSettingsOpen, onProviderSettingsToggle }: {
   modes: string[]; selected: string; passMap: PassMap;
@@ -1312,6 +1342,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
   discussionDepth: DiscussionDepth; onDiscussionDepthChange: (d: DiscussionDepth) => void;
   consensusMode: ConsensusMode; onConsensusModeChange: (c: ConsensusMode) => void;
   safetyLimitEnabled: boolean; onSafetyLimitEnabledChange: (v: boolean) => void;
+  interactionStyle: InteractionStyle; onInteractionStyleChange: (s: InteractionStyle) => void;
   providerSettings: ProvidersConfig;
   onProviderSettingsChange: (s: ProvidersConfig) => void;
   providerSettingsOpen: boolean;
@@ -1344,6 +1375,32 @@ function Sidebar({ modes, selected, passMap, onSelect,
         ))}
       </div>
       <div className="disc-mode-section">
+        <div className="sidebar-title">대화 방식</div>
+        <div className="disc-mode-btns">
+          <button
+            className={`disc-mode-btn ${interactionStyle === "debate" ? "active" : ""}`}
+            onClick={() => onInteractionStyleChange("debate")}
+            disabled={running}
+            title="논거 제시, 반박, 수렴 — 최적 결론을 도출하는 구조적 토론"
+          >
+            토론
+          </button>
+          <button
+            className={`disc-mode-btn ${interactionStyle === "conversation" ? "active" : ""}`}
+            onClick={() => onInteractionStyleChange("conversation")}
+            disabled={running}
+            title="자연스러운 대화 — 3턴 후 자동 종료, 수렴 평가 없음"
+          >
+            대화
+          </button>
+        </div>
+        {interactionStyle === "conversation" && (
+          <div className="until-consensus-warn">
+            대화 모드: 수렴 평가 없이 자연스럽게 대화합니다. 3턴 후 자동 종료됩니다.
+          </div>
+        )}
+      </div>
+      <div className="disc-mode-section">
         <div className="sidebar-title">토론 모드</div>
         <div className="disc-mode-btns">
           {(["general", "development", "idea"] as const).map(m => (
@@ -1351,7 +1408,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
               key={m}
               className={`disc-mode-btn ${discussionMode === m ? "active" : ""}`}
               onClick={() => onDiscussionModeChange(m)}
-              disabled={running}
+              disabled={running || interactionStyle === "conversation"}
               title={m === "general" ? "일상적인 주제, 단순 응답" : m === "development" ? "기술 스택·아키텍처 중심" : "창의적 제안·아이디어 발산"}
             >
               {DISC_MODE_LABELS[m]}
@@ -1372,7 +1429,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
               key={d}
               className={`disc-mode-btn ${discussionDepth === d ? "active" : ""}`}
               onClick={() => onDiscussionDepthChange(d)}
-              disabled={running}
+              disabled={running || interactionStyle === "conversation"}
               title={
                 d === "fast"     ? "1라운드 · 빠른 결론" :
                 d === "balanced" ? "2라운드 · 기본 (현재)" :
@@ -1387,7 +1444,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
           <button
             className={`disc-mode-btn until-consensus-btn ${discussionDepth === "until_consensus" ? "active" : ""}`}
             onClick={() => onDiscussionDepthChange("until_consensus")}
-            disabled={running}
+            disabled={running || interactionStyle === "conversation"}
             title="합의 도달까지 최대 20라운드 · 30분 안전 타임아웃 · 실험 모드"
           >
             {DEPTH_LABELS["until_consensus"]}
@@ -1407,7 +1464,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
               key={c}
               className={`disc-mode-btn ${consensusMode === c ? "active" : ""}`}
               onClick={() => onConsensusModeChange(c)}
-              disabled={running}
+              disabled={running || interactionStyle === "conversation"}
               title={
                 c === "auto"   ? "조건 충족 시 시스템이 자동으로 결론을 확정" :
                                  "사용자가 [채택] 버튼을 눌러야 결론 확정"
@@ -1480,7 +1537,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
               const cfg = providerSettings[p];
               const label = p === "gpt" ? "GPT" : p === "claude" ? "Claude" : "Gemini";
               const models = p === "gpt"
-                ? ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]
+                ? ["gpt-5-mini", "gpt-5", "gpt-4o"]
                 : p === "claude"
                 ? ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
                 : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
@@ -1547,13 +1604,14 @@ function Sidebar({ modes, selected, passMap, onSelect,
 
 // ─── Topic Panel ─────────────────────────────────────────────────
 
-function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace, onDeleteTopic, executionRunning }: {
+function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace, onDeleteTopic, executionRunning, onShowAnalysis }: {
   result: RunResult | null;
   selectedTopicIdx: number | null;
   onTopicClick: (idx: number) => void;
   onOpenInWorkspace?: (idx: number) => void;
   onDeleteTopic?: (idx: number) => void;
   executionRunning?: boolean;
+  onShowAnalysis?: (topic: Topic, analysis: DiscussionAnalysis) => void;
 }) {
   const hint = selectedTopicIdx !== null
     ? "클릭하여 필터 해제"
@@ -1575,10 +1633,12 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
           <TopicCard
             key={`${topic.startRevId}-${i}`}
             topic={topic}
+            analysis={result.analyses?.[i]}
             isSelected={selectedTopicIdx === i}
             onClick={() => onTopicClick(i)}
             onOpenInWorkspace={!executionRunning ? () => onOpenInWorkspace?.(i) : undefined}
             onDelete={onDeleteTopic ? () => onDeleteTopic(i) : undefined}
+            onShowAnalysis={onShowAnalysis ? (a) => onShowAnalysis(topic, a) : undefined}
           />
         ))}
       </div>
@@ -1690,14 +1750,51 @@ function StanceHistoryView({ topic }: { topic: Topic }) {
   );
 }
 
+// ─── ConversationChatView ─────────────────────────────────────────
+
+const AUTHOR_COLOR: Record<string, string> = {
+  gpt:    "#10a37f",
+  claude: "#d97706",
+  gemini: "#4f46e5",
+  user:   "#6b7280",
+  system: "#9ca3af",
+};
+
+function ConversationChatView({ proposals }: { proposals: Proposal[] }) {
+  if (proposals.length === 0) return null;
+  return (
+    <div className="conv-chat-view">
+      {proposals.map((p, i) => {
+        const value = (p.content as { value: string }).value;
+        const color = AUTHOR_COLOR[p.author] ?? "#6b7280";
+        return (
+          <div key={i} className="conv-chat-bubble">
+            <span className="conv-chat-author" style={{ color }}>{p.author.toUpperCase()}</span>
+            <span className="conv-chat-text">{value}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Topic Card ───────────────────────────────────────────────────
 
-function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace, onDelete }: {
-  topic: Topic; isSelected: boolean; onClick: () => void;
+function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenInWorkspace, onDelete, onShowAnalysis }: {
+  topic: Topic;
+  analysis?: DiscussionAnalysis;
+  isSelected: boolean;
+  onClick: () => void;
   onOpenInWorkspace?: () => void;
   onDelete?: () => void;
+  onShowAnalysis?: (analysis: DiscussionAnalysis) => void;
 }) {
-  const isUndecided = topic.selectedOption === null && topic.status !== "reopened";
+  const isUndecided   = topic.selectedOption === null && topic.status !== "reopened";
+  const isTerminal    = topic.status === "decided" || topic.status === "paused" || topic.status === "closed";
+  // 저장된 분석이 없으면 즉석 계산 (세션 로드 등 구버전 호환) — 현재 세그먼트만 평가
+  const analysis      = propAnalysis ?? (isTerminal && topic.interactionStyle !== "conversation"
+    ? analyzeDiscussion(topic, undefined, { segmentStartRevId: topic.currentSegmentStartRevId })
+    : undefined);
 
   return (
     <div
@@ -1707,9 +1804,17 @@ function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace, onDelete }: 
       <div className="topic-header">
         <span className="topic-goal">{topic.goal}</span>
         <span className={`badge ${topic.status}`}>{topic.status}</span>
-        {topic.mode && topic.mode !== "general" && (
+        {topic.interactionStyle === "conversation" && (
+          <span className="topic-mode-badge mode-conversation">💬 대화</span>
+        )}
+        {topic.mode && topic.mode !== "general" && topic.interactionStyle !== "conversation" && (
           <span className={`topic-mode-badge mode-${topic.mode}`}>
             {DISC_MODE_LABELS[topic.mode]}
+          </span>
+        )}
+        {topic.segments && topic.segments.length > 1 && (
+          <span className="topic-segment-badge">
+            Segment {topic.segments.length} / 평가 초기화됨
           </span>
         )}
         {onDelete && (
@@ -1722,12 +1827,116 @@ function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace, onDelete }: 
           </button>
         )}
       </div>
-      {topic.selectedOption && (
-        <div className="topic-selected">
-          ✓ {(topic.selectedOption.content as { value: string }).value}
-          <span className="topic-selected-by">by {topic.selectedOption.selectedBy}</span>
-        </div>
-      )}
+      {(() => {
+        // finalResolution > finalConclusion > synthesizedConsensus 우선순위
+        const fr  = analysis?.finalResolution;
+        const evo = analysis && topic.interactionStyle !== "conversation"
+          ? fr
+            ? {
+                text:   fr.primaryConclusion,
+                conf:   fr.confidence,
+                source: fr.resolutionType,
+                isFinalResolution: true,
+              }
+            : analysis.finalConclusion && analysis.finalConclusion.source !== "selected_option"
+            ? { text: analysis.finalConclusion.text, conf: analysis.finalConclusion.confidence, source: analysis.finalConclusion.source, isFinalResolution: false }
+            : analysis.synthesizedConsensus
+            ? { text: analysis.synthesizedConsensus.text, conf: analysis.synthesizedConsensus.confidence, source: "synthesized_consensus" as const, isFinalResolution: false }
+            : null
+          : null;
+
+        const selectedVal = topic.selectedOption
+          ? (topic.selectedOption.content as { value: string }).value
+          : null;
+
+        if (evo) {
+          const freeze = analysis?.convergenceFreeze;
+
+          // FinalResolution 배지 레이블
+          const RES_BADGE: Record<string, string> = {
+            stable_answer:              "안정 수렴",
+            synthesized_resolution:     "합성 해결",
+            transformed_resolution:     "최종 진화 구조",
+            unresolved_dynamic_tension: "동적 긴장",
+            synthesized_consensus: "진화된 합의",
+            surviving_branch: freeze?.freezeType === "discussion_exhausted"
+              ? "논리 수렴 완료"
+              : freeze?.freezeType === "semantic_convergence"
+              ? "의미 수렴 완료"
+              : freeze?.freezeType === "branch_frozen"
+              ? "Branch 동결"
+              : "진화 생존 합의",
+          };
+          const badgeLabel = RES_BADGE[evo.source] ?? "진화 결론";
+
+          const BADGE_CLASS: Record<string, string> = {
+            stable_answer:              "evo-branch",
+            synthesized_resolution:     "evo-synthesis",
+            transformed_resolution:     "evo-transformed",
+            unresolved_dynamic_tension: "evo-tension",
+            synthesized_consensus: "evo-synthesis",
+            surviving_branch:      "evo-branch",
+          };
+          const badgeClass = BADGE_CLASS[evo.source] ?? "evo-hybrid";
+
+          const isFrozen = !evo.isFinalResolution && freeze?.frozen && evo.source === "surviving_branch";
+
+          return (
+            <div className="topic-evo-main" onClick={e => e.stopPropagation()}>
+              <div className="topic-evo-row">
+                <span className={`topic-evo-badge ${badgeClass}`}>
+                  {badgeLabel}
+                </span>
+                <span className="topic-evo-conf">{Math.round(evo.conf * 100)}%</span>
+                {analysis && onShowAnalysis && (
+                  <button className="topic-analysis-btn topic-evo-btn" onClick={() => onShowAnalysis(analysis)}>
+                    분석 보기
+                  </button>
+                )}
+              </div>
+              {isFrozen && (
+                <div className="topic-freeze-hint">
+                  새로운 논리 진화 없음 — 최종 surviving branch
+                </div>
+              )}
+              <div className="topic-evo-text">{evo.text}</div>
+              {selectedVal && !evo.isFinalResolution && (
+                <div className="topic-winner-secondary">
+                  <span className="topic-winner-label">evaluator 선택</span>
+                  <span className="topic-winner-val">{selectedVal}</span>
+                  <span className="topic-winner-by">— {topic.selectedOption!.selectedBy}</span>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <>
+            {selectedVal && (
+              <div className="topic-selected">
+                ✓ {selectedVal}
+                <span className="topic-selected-by">by {topic.selectedOption!.selectedBy}</span>
+              </div>
+            )}
+            {analysis && topic.interactionStyle !== "conversation" && (
+              <div className="topic-analysis-bar" onClick={e => e.stopPropagation()}>
+                {analysis.saturation?.saturated ? (
+                  <>
+                    <span className="topic-saturation-badge">포화 수렴</span>
+                    <span className="topic-analysis-summary">{analysis.saturation.reason}</span>
+                  </>
+                ) : (
+                  <span className="topic-analysis-summary">{analysis.summary}</span>
+                )}
+                <button className="topic-analysis-btn" onClick={() => onShowAnalysis?.(analysis)}>
+                  토론 분석 보기
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
       {topic.status === "decided" && topic.selectedOption && onOpenInWorkspace && (
         <button
           className="topic-ws-btn"
@@ -1740,22 +1949,25 @@ function TopicCard({ topic, isSelected, onClick, onOpenInWorkspace, onDelete }: 
       {isUndecided && topic.status !== "decided" && (
         <div className="topic-undecided-label">⚠ 미결정</div>
       )}
-      <AggregationSummary topic={topic} />
-      <StanceHistoryView topic={topic} />
+      {topic.interactionStyle !== "conversation" && <AggregationSummary topic={topic} />}
+      {topic.interactionStyle !== "conversation" && <StanceHistoryView topic={topic} />}
       <div className="proposals">
-        {topic.proposals.map((p, j) => {
-          const c = p.content as { value: string; reason: string };
-          return (
-            <div key={j}>
-              <div className="proposal-row">
-                <span className="proposal-author">[{p.author}]</span>
-                <span className="proposal-value">{c.value}</span>
-                <span className="proposal-reason">— {c.reason}</span>
-              </div>
-              {p.rationale && <div className="proposal-rationale">↳ {p.rationale}</div>}
-            </div>
-          );
-        })}
+        {topic.interactionStyle === "conversation"
+          ? <ConversationChatView proposals={topic.proposals} />
+          : topic.proposals.map((p, j) => {
+              const c = p.content as { value: string; reason: string };
+              return (
+                <div key={j}>
+                  <div className="proposal-row">
+                    <span className="proposal-author">[{p.author}]</span>
+                    <span className="proposal-value">{c.value}</span>
+                    {c.reason && <span className="proposal-reason">— {c.reason}</span>}
+                  </div>
+                  {p.rationale && <div className="proposal-rationale">↳ {p.rationale}</div>}
+                </div>
+              );
+            })
+        }
       </div>
     </div>
   );
@@ -1915,6 +2127,29 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
       ?? null
     : null;
 
+  // 현재 토픽 분석 — evolutionary consensus 추출 (consensus_reached 카드 재구성용)
+  const currentTopicForPanel = useMemo(() => {
+    if (!result) return null;
+    const idx = selectedTopicIdx !== null ? selectedTopicIdx : result.topics.length - 1;
+    const t = result.topics[idx] ?? null;
+    if (!t || t.interactionStyle === "conversation") return null;
+    const isTerminal = t.status === "decided" || t.status === "paused" || t.status === "closed";
+    return isTerminal ? t : null;
+  }, [result, selectedTopicIdx]);
+
+  const topicAnalysis = useMemo(
+    () => currentTopicForPanel
+      ? analyzeDiscussion(currentTopicForPanel, undefined, { segmentStartRevId: currentTopicForPanel.currentSegmentStartRevId })
+      : null,
+    [currentTopicForPanel],
+  );
+
+  const evoConclusion = topicAnalysis
+    ? topicAnalysis.finalConclusion && topicAnalysis.finalConclusion.source !== "selected_option"
+      ? topicAnalysis.finalConclusion.text
+      : topicAnalysis.synthesizedConsensus?.text ?? null
+    : null;
+
   const hint = liveRunning
     ? "토론 진행 중..."
     : selectedTopicIdx !== null && result
@@ -2030,7 +2265,8 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
           const isPaused    = t === "discussion_paused";
 
           const badgeLabel =
-            isConsensus    ? "자동 수렴" :
+            isConsensus && evoConclusion ? "진화된 합의" :
+            isConsensus                  ? "자동 수렴"   :
             isDeadlock     ? "교착 감지" :
             isPaused       ? "토론 중지" :
             isInterjection ? "의견"     :
@@ -2039,17 +2275,21 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
           const displayValue =
             isDeadlock     ? (p.reason as string ?? "교착 상태") :
             isPaused       ? (
-              (p as Record<string, unknown>).reason === "user_stop"    ? "사용자가 토론을 중지했습니다" :
-              (p as Record<string, unknown>).reason === "safety_limit" ? "안전 한도에 도달했습니다" :
-              (p as Record<string, unknown>).reason === "hard_timeout" ? "강제 보호 종료됨 (앱 한도)" :
-                                                                         "응답 지연으로 일시 중지됨"
+              (p as Record<string, unknown>).reason === "user_stop"       ? "사용자가 토론을 중지했습니다" :
+              (p as Record<string, unknown>).reason === "safety_limit"    ? "안전 한도에 도달했습니다" :
+              (p as Record<string, unknown>).reason === "hard_timeout"    ? "강제 보호 종료됨 (앱 한도)" :
+              (p as Record<string, unknown>).reason === "stagnation"      ? "새 논거가 소진되어 토론이 자동 종료되었습니다" :
+              (p as Record<string, unknown>).reason === "soft_consensus"  ? "AI 참여자 논거가 의미적으로 수렴하여 자동 종료되었습니다" :
+                                                                            "응답 지연으로 일시 중지됨"
             ) :
             isInterjection ? (p.message as string ?? "") :
-            isConsensus    ? (p.selected as string ?? "") :
+            isConsensus    ? (evoConclusion ?? (p.selected as string ?? "")) :
                              (p.value    as string ?? "");
 
           const displayReason = isConsensus
-            ? `결정: ${p.winner ?? ""}`
+            ? evoConclusion
+              ? `초기 evaluator 선택: ${p.selected as string ?? ""} — ${p.winner ?? ""}`
+              : `결정: ${p.winner ?? ""}`
             : (!isInterjection && !isDeadlock && !isPaused ? (p.reason as string ?? "") : "");
 
           const showSelectBtn =
@@ -2094,9 +2334,18 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
       {showInput && (
         <div className="disc-interject-area">
           {/* decided 이후 continuation 안내 */}
-          {isLiveSession && !liveRunning && decidedValue && (
+          {isLiveSession && !liveRunning && (evoConclusion || decidedValue) && (
             <div className="disc-decided-hint">
-              ✔ 현재 결론: <strong>{decidedValue}</strong>
+              {topicAnalysis?.convergenceFreeze?.frozen ? (
+                <>
+                  <span className="disc-freeze-badge">논리 수렴 완료</span>
+                  {evoConclusion && <strong>{evoConclusion}</strong>}
+                </>
+              ) : evoConclusion ? (
+                <>진화된 합의: <strong>{evoConclusion}</strong></>
+              ) : (
+                <>✔ 현재 결론: <strong>{decidedValue}</strong></>
+              )}
               <span className="disc-decided-hint-sub"> — 추가 의견을 입력하면 토론이 다시 열립니다</span>
             </div>
           )}

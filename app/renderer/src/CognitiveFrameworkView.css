@@ -1,0 +1,255 @@
+/* ─── CognitiveFrameworkView ─────────────────────────────────────── */
+
+.cfv-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(7, 10, 22, 0.75);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 10px;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────── */
+.cfv-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cfv-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6366f1;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.cfv-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.30);
+  color: #818cf8;
+}
+
+.cfv-framework-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c7d2fe;
+  margin-left: auto;
+}
+
+/* ─── Generated Perspective ──────────────────────────────────────── */
+.cfv-perspective {
+  font-size: 13px;
+  font-weight: 400;
+  color: #e2e8f0;
+  line-height: 1.65;
+  padding: 10px 14px;
+  background: rgba(99, 102, 241, 0.06);
+  border-left: 3px solid #4f46e5;
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+}
+
+/* ─── Blocks ─────────────────────────────────────────────────────── */
+.cfv-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cfv-block {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid #1e2535;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cfv-block-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(30, 37, 53, 0.6);
+  border-bottom: 1px solid #1e2535;
+}
+
+.cfv-block-icon  { font-size: 11px; }
+.cfv-block-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.cfv-block-principles  .cfv-block-title { color: #818cf8; }
+.cfv-block-relations   .cfv-block-title { color: #34d399; }
+.cfv-block-pattern     .cfv-block-title { color: #f59e0b; }
+
+.cfv-block-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─── Core Principles ────────────────────────────────────────────── */
+.cfv-principles {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cfv-principle-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  background: #0d1117;
+  border: 1px solid #1e2535;
+  border-radius: 5px;
+}
+
+.cfv-principle-concept {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c7d2fe;
+  min-width: 60px;
+}
+
+.cfv-principle-role {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.role-foundation { color: #818cf8; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25); }
+.role-driver     { color: #34d399; background: rgba(52,211,153,0.10); border: 1px solid rgba(52,211,153,0.25); }
+.role-balancer   { color: #60a5fa; background: rgba(96,165,250,0.10); border: 1px solid rgba(96,165,250,0.25); }
+.role-emergent   { color: #a78bfa; background: rgba(167,139,250,0.10); border: 1px solid rgba(167,139,250,0.25); }
+.role-constraint { color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.20); }
+
+.cfv-principle-influence {
+  flex: 1;
+  height: 3px;
+  background: #1e2535;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.cfv-principle-influence-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  border-radius: 2px;
+}
+
+.cfv-principle-actors {
+  display: flex;
+  gap: 3px;
+}
+.cfv-actor-chip {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+}
+.actor-gpt    { color: #34d399; border-color: rgba(52,211,153,0.3);  }
+.actor-claude { color: #60a5fa; border-color: rgba(96,165,250,0.3);  }
+.actor-gemini { color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+
+/* ─── Structural Relationships ───────────────────────────────────── */
+.cfv-relations {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.cfv-relation-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.cfv-rel-from {
+  font-weight: 600;
+  color: #c7d2fe;
+  min-width: 60px;
+}
+
+.cfv-rel-arrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cfv-rel-type {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+.rel-requires   { color: #818cf8; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2); }
+.rel-limits     { color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); }
+.rel-stabilizes { color: #34d399; background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2); }
+.rel-amplifies  { color: #f59e0b; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); }
+.rel-balances   { color: #60a5fa; background: rgba(96,165,250,0.08); border: 1px solid rgba(96,165,250,0.2); }
+
+.cfv-rel-arrow-icon { font-size: 10px; color: #334155; }
+
+.cfv-rel-to {
+  font-weight: 600;
+  color: #c7d2fe;
+}
+
+.cfv-rel-conf {
+  font-size: 9px;
+  color: #334155;
+  margin-left: auto;
+}
+
+/* ─── Reasoning Pattern ──────────────────────────────────────────── */
+.cfv-pattern-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cfv-pattern-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(245,158,11,0.10);
+  border: 1px solid rgba(245,158,11,0.25);
+  color: #f59e0b;
+}
+
+.cfv-pattern-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+/* ─── Worldview ──────────────────────────────────────────────────── */
+.cfv-worldview {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  font-style: italic;
+  padding: 6px 10px;
+  background: rgba(99,102,241,0.04);
+  border: 1px solid rgba(99,102,241,0.12);
+  border-radius: 5px;
+}

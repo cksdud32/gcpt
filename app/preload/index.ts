@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { RunResult } from "../../src/test-modes";
-import type { Revision, Topic, DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig } from "../../src/types";
+import type { Revision, Topic, DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, InteractionStyle } from "../../src/types";
 import type { WorkspacePlan } from "../../src/workspace-providers";
 
 type DiscussionUpdate = { history: Revision[]; topics: Topic[] };
@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("api", {
     depth?: DiscussionDepth;
     consensusMode?: ConsensusMode;
     safetyLimitEnabled?: boolean;
+    interactionStyle?: InteractionStyle;
   }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke("start-live-discussion", payload),
 
@@ -92,6 +93,13 @@ contextBridge.exposeInMainWorld("api", {
 
   testProviderConnection: (provider: "gpt" | "claude" | "gemini"): Promise<{ ok: boolean; latency?: number; error?: string }> =>
     ipcRenderer.invoke("provider:testConnection", provider),
+
+  // 최초 실행 이벤트 — API 키가 설정되지 않은 상태로 앱이 처음 시작될 때
+  onFirstRun: (cb: () => void): (() => void) => {
+    const fn = () => cb();
+    ipcRenderer.once("app:first-run", fn);
+    return () => ipcRenderer.removeListener("app:first-run", fn);
+  },
 
   // 이벤트 리스너 — cleanup 함수를 반환합니다
   // 단일 이벤트: history + topics 동시 전달 → 렌더러 단일 setState

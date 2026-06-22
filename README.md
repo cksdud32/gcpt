@@ -1,61 +1,143 @@
-# gcpt
+# GCPT
 
-**여러 AI가 서로 토론하며 결론을 도출하는 실험적 AI 협업 엔진**
+**Experimental AI reasoning evolution engine — tracks branch survival, question drift, and cognitive framework generation through structured multi-agent discussion.**
 
-> gcpt is an experimental multi-AI collaboration engine where AI agents (GPT, Gemini, Claude) debate, revise, and converge on decisions through a live revision timeline.
-
----
-
-> ⚠️ **Alpha Demo / Experimental Build**
-> 이 프로젝트는 개인 실험 목적으로 개발 중입니다. API 없이도 Mock mode로 전체 기능을 체험할 수 있습니다.
+> ⚠️ **Alpha / Experimental Build**  
+> 연구 및 구조 실험 목적으로 개발 중입니다. API 없이도 Mock mode로 전체 기능을 체험할 수 있습니다.
 
 ---
 
-## 개요
+## 소개
 
-gcpt는 Electron 기반 데스크탑 앱입니다.  
-사용자가 결정해야 할 주제(Goal)를 입력하면, GPT와 Gemini가 서로 제안·반박하고, 자동으로 합의(consensus)에 도달하는 과정을 실시간으로 시각화합니다.
+GCPT는 "AI들이 결론을 뽑아내는 앱"이 아닙니다.
 
-**핵심 개념:**
-- **Revision** — 모든 AI 발언이 개정(revision) 단위로 기록됩니다
-- **Topic** — 하나의 결정 주제를 의미합니다
-- **Consensus** — AI들이 합의에 도달한 상태를 나타냅니다
-- **Interjection** — 토론 중간에 사용자가 의견을 삽입하면 토론이 재개됩니다
+토론이 진행되는 동안:
+- 질문 자체가 어떻게 변형되는가 (Question Evolution)
+- 어떤 논리 branch가 살아남고 어떤 것이 소멸하는가 (Branch Survival)
+- 토론 전체가 어떤 사고 구조를 만들어냈는가 (Cognitive Framework Extraction)
+
+를 추적하는 **실험적 reasoning evolution 시스템**입니다.
+
+결론은 "승자 선택"이 아니라 **"토론 구조 전체가 어떤 형태로 수렴했는가"** 로 표현됩니다.
 
 ---
 
-## 주요 기능
+## Evolution Flow
 
-### Revision Engine (Mock Mode)
-- 다양한 시나리오(normal / parsefail / apierror / delay / mixed / stress)로 AI 토론을 시뮬레이션
-- API 키 없이 즉시 실행 가능
-- Topic 별 합의 결과, Revision Timeline, Metrics 확인
+```
+Question (초기 질문)
+  ↓
+Multi-AI Debate
+  (GPT · Claude · Gemini 논증 / 반박 / 양보)
+  ↓
+Branch Evolution
+  (살아남는 논리 계보 vs 흡수·소멸되는 논거)
+  ↓
+Question Drift
+  (초기 질문이 어떻게 변형되는가)
+  ↓
+Structural Consensus
+  (표면 불일치 이면의 공유 구조 수렴)
+  ↓
+Cognitive Framework Extraction
+  (토론이 생성한 사고 구조 모델)
+  ↓
+Evolutionary Resolution
+  (진화 결론 — winner가 아닌 구조적 수렴)
+```
 
-### Live Discussion (API Mode)
-- GPT와 Gemini가 실제 API를 통해 실시간 토론
-- 사용자가 토론 도중 interjection(의견 삽입) 가능
-- 합의 후에도 추가 토론 재개 가능 (continuation session)
-- 토론 모드: 일반 / 개발 / 아이디어
+---
 
-### Workspace Editor
-- 로컬 파일을 불러와 Mock AI 수정 제안 확인
-- Diff 뷰어로 원본/제안 비교
-- 편집 이력(Edit Log) 관리
+## 핵심 개념
 
-### Session 저장/불러오기
-- 토론 결과를 JSON으로 저장하고 나중에 불러올 수 있습니다
+### Branch Survival
+각 proposal은 독립적인 논리 branch로 추적됩니다. refine / concede / synthesize 연결을 통해 살아남은 branch와 흡수·소멸된 branch를 분석합니다. 최종 결론은 "가장 많이 득표한 것"이 아니라 "논리 계보상 가장 강하게 살아남은 것"을 기반으로 합니다.
+
+### Question Evolution
+초기 질문(Goal)과 후반 surviving structure의 semantic centroid를 비교해 논점이 어떻게 이동했는지 분류합니다.
+
+- `stable_topic` — 원래 질문 유지
+- `reframed_topic` — 같은 질문, 다른 관점
+- `shifted_topic` — 논의 중심축 이동
+- `transformed_topic` — 질문 자체가 새 질문으로 진화
+
+Emergent Question을 자동 생성해 "토론이 실제로 답하려 한 질문"을 추출합니다.
+
+### Structural Consensus
+AI들이 표면적으로 여전히 대립하더라도, 실제로는 동일한 개념 구조를 공유하고 있을 수 있습니다. Semantic Loop 감지를 통해 표면 불일치 이면의 구조 수렴을 탐지합니다.
+
+### Cognitive Framework Extraction
+토론 전체가 형성한 사고 구조 모델을 추출합니다.
+
+| Framework Type | 의미 |
+|---|---|
+| `governance_model` | 참여·제도·구조 기반 조율 프레임 |
+| `ethical_model` | 책임·가치·신뢰 중심 프레임 |
+| `systemic_model` | 상호의존적 시스템 메커니즘 프레임 |
+| `adaptive_model` | 피드백·실험·지속 적응 프레임 |
+| `dialectical_model` | 대립 → 합성 반복 변증법 프레임 |
+| `hybrid_framework` | 복합 사고 구조 |
+
+각 framework는 핵심 원리(foundation / driver / balancer / emergent / constraint), 개념 간 관계망(requires / limits / stabilizes / amplifies / balances), reasoning pattern을 포함합니다.
+
+### Evolutionary Resolution
+최종 결론 유형:
+
+| Resolution Type | 의미 |
+|---|---|
+| `transformed_resolution` | 질문 자체가 진화한 후 도달한 결론 |
+| `synthesized_resolution` | 복수 입장의 합성으로 도달 |
+| `stable_answer` | 수렴 명확, 초기 질문 유지 |
+| `unresolved_dynamic_tension` | 긴장 유지 — 합의 없음이 결론 |
+
+### Convergence Freeze Detection
+argument entropy가 붕괴하고 novelty가 지속 소진될 때 자동 감지합니다.
+
+- `branch_frozen` — 동일 semantic defend 반복
+- `semantic_convergence` — actor 간 의미 유사도 과수렴
+- `discussion_exhausted` — novelty 완전 소진 + 지배 branch 생존
+
+### Semantic Loop Collapse
+actor들이 표면적으로 계속 대립하지만 실제 의미 drift가 거의 없는 상태(pseudo-debate)를 감지해 자동 종료합니다.
+
+### Evolution Pressure System
+각 AI actor의 논리 진화 기여도를 추적합니다. defend 반복 비율이 높은 actor는 semantic decay로 표시되고, refine / concede / synthesize 중심의 actor는 evolution driver로 집계됩니다.
+
+### Segment-Based Continuation
+사용자가 토론 중간에 개입(Interjection)하면 새 segment가 시작됩니다.
+
+- 이전 segment의 evaluator score는 리셋
+- 이전 segment의 결론·핵심 개념·미해결 충돌은 memory context로 유지
+- segment별 독립 분석 + 통합 meta-evolution 분석 제공
+
+---
+
+## 분석 시스템 (Analysis Modal)
+
+토론 종료 후 열리는 분석 화면은 다음 레이어를 표시합니다:
+
+| 레이어 | 내용 |
+|---|---|
+| **생성된 사고 프레임** | cognitive framework type, 핵심 원리, 개념 관계망, reasoning pattern, 생성된 관점 |
+| **최종 진화 구조** | resolution type, primary conclusion, 논리 진화 궤적, 미해결 긴장 |
+| **질문 진화** | 초기 → 중간 → emergent question, 신규/소멸 개념, actor lock/redirect |
+| **Meta Evolution** | segment 간 사고 흐름 변화, concept transition, interjection 영향 |
+| **논리 수렴 과정** | novelty decay, convergence history, phase flow |
+| **생존 Branch** | dominant branch, semantic persistence, innovation retention |
+| **Argument Graph** | 논거 간 관계 그래프, synthesis lineage |
+| **Concept Gravity** | 토론을 지배한 개념 ranking |
+| **Structural Consensus Map** | 표면 충돌 vs 공유 구조 시각화 |
 
 ---
 
 ## 기술 스택
 
 | 분류 | 기술 |
-|------|------|
+|---|---|
 | 런타임 | Electron 28 + Node.js |
 | 프레임워크 | electron-vite 5 |
 | UI | React 19 + TypeScript |
-| AI | OpenAI GPT-4o-mini, Google Gemini 2.5-flash |
-| 상태 관리 | React useState (no external lib) |
+| AI | OpenAI GPT / Anthropic Claude / Google Gemini |
 | 빌드 | Vite 7, TypeScript 6 |
 
 ---
@@ -78,12 +160,12 @@ npm install
 
 ```bash
 cp .env.example .env
-# .env 파일을 열어 API 키를 입력하세요
+# .env 파일에 API 키 입력
 ```
 
 API 키 없이도 Mock mode로 모든 기능을 체험할 수 있습니다.
 
-### 개발 모드 실행
+### 개발 모드
 
 ```bash
 npm run app
@@ -92,22 +174,21 @@ npm run app
 ### 프로덕션 빌드
 
 ```bash
-npm run app:build
+npm run dist:win   # Windows 패키지
+npm run app:build  # 일반 빌드
 ```
 
 ---
 
-## API 키 설정 방법
-
-`.env` 파일을 생성하고 아래와 같이 설정합니다:
+## API 키 설정
 
 ```env
-OPENAI_API_KEY=sk-...         # GPT 실제 응답에 필요
-GEMINI_API_KEY=               # Gemini 실제 응답에 필요 (없으면 Mock 사용)
-ANTHROPIC_API_KEY=            # 현재 미사용 (향후 확장용)
+OPENAI_API_KEY=sk-...       # GPT 실제 응답
+GEMINI_API_KEY=             # Gemini 실제 응답
+ANTHROPIC_API_KEY=          # Claude 실제 응답
 ```
 
-**API 키가 없는 경우**: Mock worker가 자동으로 사용되며, 실제 API 호출 없이 시뮬레이션 응답이 생성됩니다.
+키가 없는 경우 해당 AI는 자동으로 Mock worker로 대체됩니다.
 
 ---
 
@@ -115,24 +196,17 @@ ANTHROPIC_API_KEY=            # 현재 미사용 (향후 확장용)
 
 ### Mock Mode (API 키 불필요)
 
-1. 앱 실행 후 좌측 사이드바에서 모드 선택 (normal, delay, stress 등)
+1. 앱 실행 → 좌측 사이드바에서 시나리오 선택 (normal / delay / stress 등)
 2. `▶ 실행` 클릭
-3. Topic View에서 합의 결과, Timeline에서 Revision 흐름 확인
+3. 토론 종료 후 `분석 보기` → 생성된 사고 프레임, 질문 진화, 논리 궤적 확인
 
-### Live Discussion Mode (API 키 필요)
+### Live Discussion Mode
 
-1. `⚡ Live OFF` 버튼을 클릭해 `⚡ Live ON` 으로 전환
-2. 토론 모드 선택 (일반 / 개발 / 아이디어)
-3. `▶ 실행` 또는 직접 입력란에 주제 입력 후 실행
-4. AI Discussion 패널에서 실시간 토론 확인
-5. 합의 후 추가 의견 입력 → 토론 재개 가능
-
-### Workspace Editor
-
-1. 상단 `Workspace Editor` 탭 클릭
-2. `Open Workspace`로 폴더 선택
-3. 파일 선택 → `Mock Edit Proposal`로 수정 제안 생성
-4. Diff 확인 후 `Apply`로 실제 파일에 적용
+1. `⚡ Live OFF` → `⚡ Live ON` 전환
+2. 활성화할 AI 선택 (GPT / Claude / Gemini)
+3. 주제 입력 후 실행
+4. 토론 중 `Interjection`으로 개입 → 새 segment 시작
+5. 종료 후 분석 모달에서 evolution layer 탐색
 
 ---
 
@@ -141,62 +215,72 @@ ANTHROPIC_API_KEY=            # 현재 미사용 (향후 확장용)
 ```
 gcpt/
 ├── app/
-│   ├── main/       # Electron main process (IPC 핸들러)
-│   ├── preload/    # contextBridge API 노출
-│   └── renderer/   # React UI
-├── src/
-│   ├── orchestrator.ts       # Mock 워커 (GPT/Claude/User)
-│   ├── live-orchestrator.ts  # Live 토론 엔진
-│   ├── RevisionStore.ts      # Revision 저장소
-│   ├── policy.ts             # 합의 정책
-│   ├── metrics.ts            # 성능 메트릭
-│   └── workers/
-│       ├── gpt.ts            # Real GPT 워커
-│       ├── gemini.ts         # Real Gemini 워커
-│       └── mode-instruction.ts
-└── .env.example
+│   ├── main/         # Electron main process (IPC 핸들러)
+│   ├── preload/      # contextBridge API
+│   └── renderer/     # React UI
+│       └── src/
+│           ├── AnalysisModal.tsx      # 분석 모달 (7-layer)
+│           ├── CognitiveFrameworkView.tsx
+│           ├── FinalResolutionView.tsx
+│           ├── QuestionEvolutionView.tsx
+│           ├── MetaEvolutionView.tsx
+│           ├── StructuralAnalysisView.tsx
+│           └── ArgumentGraphView.tsx
+└── src/
+    ├── live-orchestrator.ts      # Live 토론 엔진
+    ├── analysis.ts               # 분석 파이프라인 통합
+    ├── cognitive-framework.ts    # Cognitive Framework Extraction
+    ├── final-resolution.ts       # Evolutionary Resolution
+    ├── question-evolution.ts     # Question Evolution Layer
+    ├── meta-evolution.ts         # Segment-level Meta Evolution
+    ├── semantic-loop.ts          # Semantic Loop / Pseudo-debate Detection
+    ├── concept-gravity.ts        # Concept Gravity System
+    ├── branch-survival.ts        # Branch Survival Resolver
+    ├── argument-graph.ts         # Argument Graph Builder
+    ├── convergence-freeze.ts     # Convergence Freeze Detection
+    ├── evolution-pressure.ts     # Evolution Pressure System
+    ├── synthesis.ts              # Consensus Synthesis
+    └── final-conclusion.ts       # Final Conclusion Resolver
 ```
 
 ---
 
-## 현재 상태 (Alpha Demo)
+## Recent Updates
 
-- [x] Mock mode 다중 시나리오
-- [x] Live Discussion (GPT + Gemini 실시간 토론)
-- [x] Interjection (토론 중 사용자 개입)
-- [x] Continuation session (합의 후 재토론)
-- [x] Revision Timeline 시각화
-- [x] Workspace Editor (Diff 뷰어)
-- [x] Session 저장/불러오기
+| 버전 | 추가 내용 |
+|---|---|
+| Cognitive Framework | 토론이 생성한 사고 프레임 추출 — frameworkType / corePrinciples / structuralRelationships / reasoningPattern / generatedPerspective |
+| Evolutionary Resolution | winner 선택 대신 진화 구조 기반 최종 결론 — transformed / synthesized / stable / unresolved_dynamic_tension |
+| Question Evolution Layer | 초기 vs 후반 semantic centroid 비교, emergent question 생성, question pressure per-revision, actor lock detection |
+| Branch Survival Resolver | refine/concede/synthesize lineage 기반 branch 생존 분석, semantic persistence / innovation retention 점수화 |
+| Cognitive Framework | 위 참조 |
+| Evolution Pressure System | actor별 논리 진화 기여도, semantic decay actor 감지, innovation moment 추적 |
+| Convergence Freeze Detection | entropy collapse + novelty 소진 → branch_frozen / semantic_convergence / discussion_exhausted 분류 |
+| Segment-based Continuation | 사용자 개입 → 새 segment, evaluator 리셋, 이전 reasoning memory 유지 |
+| Meta Evolution Analysis | segment 간 concept transition, interjection 영향, topicShiftType 분류 |
+| Semantic Loop Collapse | pseudo-debate 감지, structural consensus 추출, 자동 종료 |
+| Structural Analysis | SemanticLoopView / ConceptGravityView / StructuralMapView |
+| Provider Control | GPT / Claude / Gemini ON/OFF, API key 분리, 모델 선택 |
 
 ---
 
 ## Known Issues
 
-- **한글 콘솔 출력 깨짐**: Windows 기본 터미널(cmd/PowerShell)에서 한글 로그가 깨질 수 있습니다. Windows Terminal 또는 `chcp 65001` 사용을 권장합니다.
-- **Gemini parseFail**: 응답이 길어질 경우 드물게 파싱 실패가 발생할 수 있습니다. 토론 흐름에 영향은 없습니다.
-- **API Rate Limit**: Gemini 무료 티어 사용 시 RPM 제한으로 일부 응답이 스킵될 수 있습니다.
-
----
-
-## Roadmap
-
-- [ ] Claude API 실제 연동 (현재 Mock 사용)
-- [ ] 다중 Goal 병렬 토론
-- [ ] 토론 결과 마크다운 내보내기
-- [ ] 토론 히스토리 검색
-- [ ] 모바일/웹 빌드
-
----
-
-## 라이선스
-
-MIT License — 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
+- **한글 콘솔 출력 깨짐**: Windows 기본 터미널에서 한글 로그가 깨질 수 있습니다. Windows Terminal 또는 `chcp 65001` 권장.
+- **Gemini parseFail**: 응답이 길어질 경우 드물게 파싱 실패. 토론 흐름에는 영향 없음.
+- **API Rate Limit**: 무료 티어 사용 시 RPM 제한으로 일부 응답이 스킵될 수 있습니다.
 
 ---
 
 ## 주의사항
 
-- `.env` 파일에 실제 API 키를 입력한 경우, **절대로 Git에 커밋하지 마세요**
-- `.gitignore`에 `.env`가 포함되어 있지만, 실수로 노출되지 않도록 주의하세요
-- 이 프로젝트는 Alpha 단계이며, API 사용에 따른 과금이 발생할 수 있습니다
+- `.env` 파일에 API 키 입력 시 **절대로 Git에 커밋하지 마세요**
+- `.gitignore`에 `.env`가 포함되어 있으나 주의 필요
+- API 사용에 따른 과금이 발생할 수 있습니다
+- 이 프로젝트는 Alpha 단계의 실험적 빌드입니다
+
+---
+
+## 라이선스
+
+MIT License — [LICENSE](LICENSE) 참조

@@ -3,6 +3,11 @@ import { RevisionStore } from "../RevisionStore.js";
 import { Revision, DiscussionBudget, DEPTH_BUDGETS, StanceAction } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
+import {
+  findCurrentSegmentStartRevId,
+  buildSegmentContext,
+  getSegmentPriorProposals,
+} from "./segment-context.js";
 
 const VALID_STANCE_ACTIONS = new Set<string>(["defend", "refine", "concede", "propose"]);
 
@@ -43,47 +48,6 @@ function parseResponse(raw: string): ProposalResponse | null {
   }
 }
 
-function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
-  const history = store.getHistory();
-  const start = history.findIndex((r) => r.id === capturedGoalRevId);
-  const topicRevs = start >= 0 ? history.slice(start) : [];
-
-  const foreign = topicRevs.filter(
-    (r) => r.patch.payload.type === "set_goal" && r.id !== capturedGoalRevId
-  );
-  if (foreign.length > 0) {
-    console.warn(
-      `[buildContext][GPT] 오염 감지: goalRevId=${capturedGoalRevId}에 ` +
-      `다른 topic set_goal ${foreign.length}개 포함 (ids: ${foreign.map(r => r.id).join(",")})`
-    );
-  }
-
-  return topicRevs
-    .filter((r) => r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative")
-    .map((r) => {
-      const p = r.patch.payload as { value: string; reason: string };
-      return `- [${r.author}] ${p.value}: ${p.reason}`;
-    })
-    .join("\n");
-}
-
-/** GPT의 이전 발언 추출 (value, reason 쌍) */
-function getMyPriorProposals(
-  store: RevisionStore,
-  capturedGoalRevId: number,
-): Array<{ value: string; reason: string }> {
-  const history = store.getHistory();
-  const start   = history.findIndex(r => r.id === capturedGoalRevId);
-  return (start >= 0 ? history.slice(start) : [])
-    .filter(r =>
-      r.author === "gpt" &&
-      (r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative"),
-    )
-    .map(r => ({
-      value:  (r.patch.payload as { value: string }).value,
-      reason: (r.patch.payload as { value: string; reason: string }).reason,
-    }));
-}
 
 const SYSTEM = `You are a technical advisor in a multi-AI decision system.
 Your role is to propose or counter-propose concrete solutions.
@@ -106,8 +70,16 @@ export class RealGPTWorker {
   private respondedInterjections = new Set<number>(); // interjection rev.id
   private readonly maxPerTopic: number;
   private readonly maxDistinctProposals: number;
+  private phaseInstruction = "";
+  private memoryContext    = "";
 
-  constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget, private model = "gpt-4o-mini") {
+  setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
+  setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  private phaseNote(): string {
+    return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
+  }
+
+  constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget, private model = "gpt-5-mini") {
     this.client = new OpenAI({ apiKey });
     this.maxPerTopic         = budget?.maxRoundsPerWorker   ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
     this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.balanced.maxDistinctProposals;
@@ -126,6 +98,9 @@ export class RealGPTWorker {
 
     // ── 케이스별 prompt / patchType / refs / rollback 결정 ──────────
 
+    // 현재 세그먼트 시작 rev ID — 이전 세그먼트 proposal이 context에 섞이지 않도록
+    const segmentStartRevId = findCurrentSegmentStartRevId(this.store, capturedGoalRevId);
+
     let prompt: string;
     let patchType: "propose_decision" | "propose_alternative";
     let refs: number[] | undefined;
@@ -136,11 +111,12 @@ export class RealGPTWorker {
       if (this.respondedInterjections.has(rev.id)) return;
       this.respondedInterjections.add(rev.id);
       const msg = (rev.patch.payload as { message: string }).message;
-      const ctx = buildContext(this.store, capturedGoalRevId);
+      const ctx = buildSegmentContext(this.store, capturedGoalRevId, segmentStartRevId, this.memoryContext);
       prompt =
-        `${modeInstruction}\n\nGoal: "${goal}"\n\nDiscussion so far:\n${ctx}\n\n` +
+        `${modeInstruction}\n\nGoal: "${goal}"\n\n${ctx}\n\n` +
         `User raised: "${msg}"\n\n` +
-        `Continue the discussion by addressing the user's point. Propose a concrete response.`;
+        `Continue the discussion by addressing the user's point. Propose a concrete response.\n` +
+        `IMPORTANT: The goal is in ${/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(goal) ? "Korean — respond entirely in Korean" : "English — respond in English"}.`;
       patchType = "propose_alternative";
       refs = [rev.id];
       rollback = () => this.respondedInterjections.delete(rev.id);
@@ -148,8 +124,11 @@ export class RealGPTWorker {
     } else if (type === "set_goal") {
       const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
       if (count >= this.maxPerTopic) return;
+      const memNote = this.memoryContext
+        ? `\n[이전 토론 기억 — 참고만]\n${this.memoryContext}\n`
+        : "";
       prompt =
-        `${modeInstruction}\n\n` +
+        `${modeInstruction}\n${this.phaseNote()}${memNote}\n` +
         `Goal: "${goal}"\n\n` +
         `Propose ONE concrete solution.\n` +
         `IMPORTANT: The goal above is in ${/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(goal) ? "Korean — respond entirely in Korean" : "English — respond in English"}.`;
@@ -162,11 +141,11 @@ export class RealGPTWorker {
       const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
       if (count >= this.maxPerTopic) return;
       const p = rev.patch.payload as { value: string; reason: string };
-      const ctx = buildContext(this.store, capturedGoalRevId);
+      const ctx = buildSegmentContext(this.store, capturedGoalRevId, segmentStartRevId, this.memoryContext);
       const counterName = rev.author === "gemini" ? "Gemini" : "Claude";
 
-      // 내 이전 발언 파악 → defend/concede/propose 계층 prompt
-      const myPrior = getMyPriorProposals(this.store, capturedGoalRevId);
+      // 내 이전 발언 파악 → defend/concede/propose 계층 prompt (현재 세그먼트만)
+      const myPrior = getSegmentPriorProposals(this.store, "gpt", capturedGoalRevId, segmentStartRevId);
       const myLast  = myPrior[myPrior.length - 1];
       const distinctCount = new Set(myPrior.map(p => p.value.trim().toLowerCase())).size;
       const limitReached  = distinctCount >= this.maxDistinctProposals;
@@ -180,7 +159,7 @@ export class RealGPTWorker {
           ? `\n⚠ You have already introduced ${distinctCount} distinct option(s). You MUST choose DEFEND or CONCEDE — do NOT propose another new option.\n`
           : "";
         prompt =
-          `${modeInstruction}\n${langNote}\nGoal: "${goal}"\n\n` +
+          `${modeInstruction}\n${langNote}${this.phaseNote()}\nGoal: "${goal}"\n\n` +
           `Your current position: "${myLast.value}" — ${myLast.reason}\n` +
           `${counterName} challenges: "${p.value}" — ${p.reason}\n\n` +
           `Full discussion:\n${ctx}\n` +
@@ -192,7 +171,7 @@ export class RealGPTWorker {
           `\nPrefer 1 or 2. Avoid 3 unless there is a strong, specific reason.`;
       } else {
         prompt =
-          `${modeInstruction}\n${langNote}\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\n` +
+          `${modeInstruction}\n${langNote}${this.phaseNote()}\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\n` +
           `${counterName} just proposed "${p.value}" (${p.reason}).\n` +
           `Explain a specific weakness of ${counterName}'s proposal, then propose a concrete alternative.`;
       }

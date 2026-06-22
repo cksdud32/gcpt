@@ -1,0 +1,258 @@
+/* ─── FinalResolutionView ────────────────────────────────────────── */
+
+.frv-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(10, 15, 30, 0.7);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 10px;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────── */
+.frv-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.frv-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.frv-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.frv-type-stable      { color: #34d399; background: rgba(52,211,153,0.08);  border-color: rgba(52,211,153,0.25);  }
+.frv-type-synthesized { color: #60a5fa; background: rgba(96,165,250,0.08);  border-color: rgba(96,165,250,0.25);  }
+.frv-type-transformed { color: #c4b5fd; background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.3); }
+.frv-type-tension     { color: #f59e0b; background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.25); }
+
+.frv-conf {
+  margin-left: auto;
+  font-size: 10px;
+  color: #475569;
+}
+.frv-conf-val { font-weight: 600; color: #64748b; }
+
+/* ─── Primary Conclusion ─────────────────────────────────────────── */
+.frv-primary {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: rgba(167,139,250,0.06);
+  border-left: 3px solid #7c3aed;
+  border-radius: 0 6px 6px 0;
+}
+
+/* ─── 4 Blocks ───────────────────────────────────────────────────── */
+.frv-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.frv-block {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid #1e2535;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.frv-block-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(30, 37, 53, 0.6);
+  border-bottom: 1px solid #1e2535;
+}
+
+.frv-block-icon { font-size: 11px; }
+.frv-block-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.frv-block-emergent  .frv-block-title { color: #a78bfa; }
+.frv-block-structural .frv-block-title { color: #60a5fa; }
+.frv-block-traj      .frv-block-title { color: #34d399; }
+.frv-block-tension   .frv-block-title { color: #f59e0b; }
+
+.frv-block-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─── Emergent Question ──────────────────────────────────────────── */
+.frv-emergent-q {
+  font-size: 12px;
+  color: #c4b5fd;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* ─── Structural Consensus Core ──────────────────────────────────── */
+.frv-struct-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.frv-struct-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: #60a5fa;
+  padding: 2px 9px;
+  background: rgba(96,165,250,0.08);
+  border: 1px solid rgba(96,165,250,0.25);
+  border-radius: 10px;
+}
+
+/* ─── Evolutionary Trajectory ────────────────────────────────────── */
+.frv-traj {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.frv-traj-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.frv-traj-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.frv-traj-num {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1e2535;
+  border: 1px solid #334155;
+  font-size: 9px;
+  font-weight: 700;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.frv-traj-final .frv-traj-num {
+  background: rgba(52,211,153,0.15);
+  border-color: rgba(52,211,153,0.3);
+  color: #34d399;
+}
+
+.frv-traj-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.frv-traj-axis {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.frv-traj-final .frv-traj-axis {
+  color: #34d399;
+  font-weight: 500;
+}
+
+.frv-traj-dominant {
+  font-size: 10px;
+  color: #475569;
+  font-style: italic;
+}
+
+.frv-traj-shift-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0 3px 26px;
+}
+
+.frv-traj-arrow { font-size: 10px; color: #334155; }
+.frv-traj-shift {
+  font-size: 10px;
+  color: #60a5fa;
+  font-style: italic;
+}
+
+/* ─── Unresolved Tensions ────────────────────────────────────────── */
+.frv-tensions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.frv-tension-row {
+  padding: 7px 10px;
+  background: rgba(245,158,11,0.04);
+  border: 1px solid rgba(245,158,11,0.15);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.frv-tension-axis {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f59e0b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.frv-tension-sides {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.frv-tension-side {
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 1px 7px;
+  background: #0d1117;
+  border: 1px solid #1e2535;
+  border-radius: 5px;
+}
+
+.frv-tension-vs {
+  font-size: 10px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.frv-tension-why {
+  font-size: 10px;
+  color: #475569;
+  line-height: 1.4;
+  font-style: italic;
+}

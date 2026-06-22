@@ -318,6 +318,217 @@ button:disabled { opacity: 0.4; cursor: default; }
   border-bottom: 1px solid #5a3e1a;
 }
 
+/* ─── Topic Analysis Bar ─────────────────────────────────────────── */
+.topic-analysis-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #181c20;
+  border-bottom: 1px solid #252a2e;
+}
+.topic-analysis-summary {
+  flex: 1;
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.topic-analysis-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  background: #1a2a3a;
+  color: #5bb0e8;
+  border: 1px solid #2a4060;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.topic-analysis-btn:hover {
+  background: #1e3a5a;
+  border-color: #4a90d0;
+}
+.topic-synthesis-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  margin-right: 6px;
+}
+.topic-saturation-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-right: 6px;
+}
+.topic-conclusion-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+.topic-conclusion-synthesis {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+.topic-conclusion-hybrid {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+/* ─── Evolutionary Consensus 메인 카드 ───────────────────────────── */
+.topic-evo-main {
+  padding: 8px 12px 6px;
+  background: linear-gradient(135deg, #0d1f14 0%, #0f1a1c 100%);
+  border-bottom: 1px solid #2a4a3a;
+}
+
+.topic-evo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.topic-evo-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.evo-synthesis {
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.evo-hybrid {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+.evo-branch {
+  background: rgba(167, 139, 250, 0.18);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.40);
+}
+
+.evo-transformed {
+  background: rgba(167, 139, 250, 0.22);
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.50);
+  font-weight: 700;
+}
+.evo-tension {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.topic-freeze-hint {
+  font-size: 10px;
+  color: #a78bfa;
+  opacity: 0.8;
+  margin-bottom: 4px;
+  letter-spacing: 0.2px;
+}
+
+.topic-segment-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  margin-right: 4px;
+  letter-spacing: 0.3px;
+}
+
+.disc-freeze-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(167, 139, 250, 0.18);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.40);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-right: 6px;
+}
+
+.topic-evo-conf {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b9;
+  flex-shrink: 0;
+}
+
+.topic-evo-btn {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+.topic-evo-text {
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.45;
+  margin-bottom: 5px;
+}
+
+.topic-winner-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid #1e3028;
+  margin-top: 2px;
+}
+.topic-winner-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b7280;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.topic-winner-val {
+  font-size: 11px;
+  color: #9ca3af;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topic-winner-by {
+  font-size: 10px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
 .proposals { padding: 6px 0; }
 
 .proposal-row {
@@ -932,6 +1143,41 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: #3a2d5c;
   color: #c586c0;
   border-color: #7a4abf44;
+}
+.topic-mode-badge.mode-conversation {
+  background: #1e3a2f;
+  color: #4ec9b0;
+  border-color: #4ec9b044;
+}
+
+/* ── Conversation Chat View ──────────────────────────────────────── */
+.conv-chat-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 4px;
+  border-top: 1px solid #2d2d2d;
+  margin-top: 6px;
+}
+.conv-chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: #1e1e1e;
+  border-radius: 6px;
+  border: 1px solid #2d2d2d;
+}
+.conv-chat-author {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+}
+.conv-chat-text {
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.5;
 }
 
 /* ── Discussion live status ─────────────────────────────────────── */

@@ -2,6 +2,11 @@ import { RevisionStore } from "../RevisionStore.js";
 import { Revision, DiscussionBudget, DEPTH_BUDGETS, StanceAction } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
+import {
+  findCurrentSegmentStartRevId,
+  buildSegmentContext,
+  getSegmentPriorProposals,
+} from "./segment-context.js";
 
 // ─── 파서 ─────────────────────────────────────────────────────────
 
@@ -57,36 +62,6 @@ function parseResponse(raw: string): ProposalResponse | null {
   }
 }
 
-function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
-  const history = store.getHistory();
-  const start   = history.findIndex((r) => r.id === capturedGoalRevId);
-  const topicRevs = start >= 0 ? history.slice(start) : [];
-  return topicRevs
-    .filter((r) => r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative")
-    .map((r) => {
-      const p = r.patch.payload as { value: string; reason: string };
-      return `- [${r.author}] ${p.value}: ${p.reason}`;
-    })
-    .join("\n");
-}
-
-/** Gemini의 이전 발언 추출 */
-function getMyPriorProposals(
-  store: RevisionStore,
-  capturedGoalRevId: number,
-): Array<{ value: string; reason: string }> {
-  const history = store.getHistory();
-  const start   = history.findIndex(r => r.id === capturedGoalRevId);
-  return (start >= 0 ? history.slice(start) : [])
-    .filter(r =>
-      r.author === "gemini" &&
-      (r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative"),
-    )
-    .map(r => ({
-      value:  (r.patch.payload as { value: string }).value,
-      reason: (r.patch.payload as { value: string; reason: string }).reason,
-    }));
-}
 
 // ─── 모델 목록 ────────────────────────────────────────────────────
 //
@@ -249,6 +224,14 @@ export class RealGeminiWorker {
   private spokenAt        = new Map<number, number>();
   private permanentlyFailed = new Set<number>(); // 429 소진된 goalRevId — 재시도 차단
   private callCount       = 0; // 실제 HTTP 요청 수 (retry + fallback 포함)
+  private phaseInstruction = "";
+  private memoryContext    = "";
+
+  setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
+  setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  private phaseNote(): string {
+    return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
+  }
 
   private readonly maxPerTopic:          number;
   private readonly maxPerRun:            number;
@@ -296,10 +279,13 @@ export class RealGeminiWorker {
 
     const challenger = rev.patch.payload as { value: string; reason: string };
     const challengerName = rev.author === "claude" ? "Claude" : "GPT";
-    const ctx = buildContext(this.store, capturedGoalRevId);
 
-    // 내 이전 발언 파악 → defend/concede/propose 계층 prompt
-    const myPrior       = getMyPriorProposals(this.store, capturedGoalRevId);
+    // 현재 세그먼트만 사용 — 이전 세그먼트 score 오염 방지
+    const segmentStartRevId = findCurrentSegmentStartRevId(this.store, capturedGoalRevId);
+    const ctx = buildSegmentContext(this.store, capturedGoalRevId, segmentStartRevId, this.memoryContext);
+
+    // 내 이전 발언 파악 → defend/concede/propose 계층 prompt (현재 세그먼트만)
+    const myPrior       = getSegmentPriorProposals(this.store, "gemini", capturedGoalRevId, segmentStartRevId);
     const myLast        = myPrior[myPrior.length - 1];
     const distinctCount = new Set(myPrior.map(p => p.value.trim().toLowerCase())).size;
     const limitReached  = distinctCount >= this.maxDistinctProposals;
@@ -321,7 +307,7 @@ export class RealGeminiWorker {
         : "";
       prompt =
         `You are Gemini, a technical advisor in a team discussion.\n` +
-        `${modeInstruction}\n${langPolicy}` +
+        `${modeInstruction}\n${langPolicy}${this.phaseNote()}` +
         `Goal: "${goal}"\n\n` +
         `Your current position: "${myLast.value}" — ${myLast.reason}\n` +
         `${challengerName} challenges: "${challenger.value}" — ${challenger.reason}\n\n` +
@@ -337,7 +323,7 @@ export class RealGeminiWorker {
       // 첫 반박: 아직 내 입장 없음 → 자유롭게 대안 제시
       prompt =
         `You are a technical advisor in a team discussion.\n` +
-        `${modeInstruction}\n${langPolicy}` +
+        `${modeInstruction}\n${langPolicy}${this.phaseNote()}` +
         `Goal: "${goal}"\n` +
         `${challengerName} proposed: "${challenger.value}" — ${challenger.reason}\n` +
         (ctx ? `Other proposals:\n${ctx}\n` : "") +

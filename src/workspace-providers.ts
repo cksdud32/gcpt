@@ -182,7 +182,7 @@ export class MockWorkspaceProvider implements WorkspaceAIProvider {
 
     // keyword match: query first, then context selectedValue
     const searchTarget = context
-      ? `${query} ${context.selectedValue.toLowerCase()}`
+      ? `${query} ${context.selectedValue?.toLowerCase() ?? ""}`
       : query;
 
     for (const [key, resp] of Object.entries(MOCK_KEYWORD_RESPONSES)) {
@@ -202,7 +202,7 @@ export class MockWorkspaceProvider implements WorkspaceAIProvider {
   }
 
   generatePlan(context?: WsLinkedContext): Promise<WorkspacePlan> {
-    const value = context?.selectedValue.toLowerCase() ?? "";
+    const value = context?.selectedValue?.toLowerCase() ?? "";
 
     type RawStep = Omit<WorkspacePlanStep, "status">;
     let rawSteps: RawStep[];

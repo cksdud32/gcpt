@@ -1,4 +1,4 @@
-import { Author, Patch, Revision, State, ProposeDecisionPayload, ProposeAlternativePayload } from "./types.js";
+import { Author, Patch, Revision, State, ProposeDecisionPayload, ProposeAlternativePayload, DiscussionSegment } from "./types.js";
 
 type Subscriber = (revision: Revision) => void | Promise<void>;
 
@@ -111,27 +111,40 @@ export class RevisionStore {
           const prev = currentTopic();
           if (prev && prev.status === "active") prev.status = "closed";
 
+          const firstSeg: DiscussionSegment = {
+            segmentId:           1,
+            startRevisionId:     rev.id,
+            proposalRevisionIds: [],
+          };
           state.topics.push({
             goal: payload.goal,
             mode: payload.mode,
+            interactionStyle: payload.interactionStyle,
             startRevId: rev.id,
             status: "active",
             proposals: [],
             selectedOption: null,
+            segments:                 [firstSeg],
+            currentSegmentStartRevId: rev.id,
           });
           break;
         }
 
         case "propose_decision":
-        case "propose_alternative": {
-          // proposal은 항상 현재 topic에 속함
-          // (동기 흐름에서 append되므로 위치 기반 귀속이 정확)
-          currentTopic()?.proposals.push({
-            revisionId: rev.id,
-            author: rev.author,
-            content: payload,
-            rationale,
-          });
+        case "propose_alternative":
+        case "chat_reply": {
+          const t = currentTopic();
+          if (t) {
+            t.proposals.push({
+              revisionId: rev.id,
+              author: rev.author,
+              content: payload,
+              rationale,
+            });
+            // 현재 세그먼트에도 revId 기록
+            const curSeg = t.segments[t.segments.length - 1];
+            if (curSeg) curSeg.proposalRevisionIds.push(rev.id);
+          }
           break;
         }
 
@@ -179,10 +192,25 @@ export class RevisionStore {
         }
 
         case "user_interjection": {
-          // 이미 decided된 topic에 대한 interjection → "reopened" 상태로 전환
+          // 이미 decided/paused된 topic에 대한 interjection → "reopened" + 새 세그먼트
           const topic = currentTopic();
-          if (topic && topic.status === "decided") {
+          if (topic && (topic.status === "decided" || topic.status === "paused")) {
             topic.status = "reopened";
+
+            // 현재 세그먼트 종료 표시
+            const prevSeg = topic.segments[topic.segments.length - 1];
+            if (prevSeg && prevSeg.endRevisionId === undefined) {
+              prevSeg.endRevisionId = rev.id - 1;
+            }
+
+            // 새 세그먼트 시작
+            const newSeg: DiscussionSegment = {
+              segmentId:           topic.segments.length + 1,
+              startRevisionId:     rev.id,
+              proposalRevisionIds: [],
+            };
+            topic.segments.push(newSeg);
+            topic.currentSegmentStartRevId = rev.id;
           }
           break;
         }
@@ -192,12 +220,19 @@ export class RevisionStore {
           if (topic) {
             topic.status = "overridden";
             if (payload.goal !== undefined) {
+              const overrideSeg: DiscussionSegment = {
+                segmentId:           1,
+                startRevisionId:     rev.id,
+                proposalRevisionIds: [],
+              };
               state.topics.push({
                 goal: payload.goal,
                 startRevId: rev.id,
                 status: "active",
                 proposals: [],
                 selectedOption: null,
+                segments:                 [overrideSeg],
+                currentSegmentStartRevId: rev.id,
               });
             }
           }

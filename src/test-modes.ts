@@ -2,7 +2,7 @@ import { RevisionStore } from "./RevisionStore.js";
 import { MockGPTWorker, MockClaudeWorker, MockUserWorker, MOCK_CONFIGS, MockConfig } from "./orchestrator.js";
 import { RealGeminiWorker } from "./workers/gemini.js";
 import { createMetrics, printMetrics, Metrics } from "./metrics.js";
-import type { Topic, Revision, DiscussionMode } from "./types.js";
+import type { Topic, Revision, DiscussionMode, DiscussionAnalysis } from "./types.js";
 
 // ─── Goal 목록 ────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ export interface RunResult {
   revisionCount: number;
   topics: Topic[];
   history: Revision[];
+  analyses?: DiscussionAnalysis[];  // topics[i]에 대한 분석 결과 (parallel array)
 }
 
 // ─── 핵심 실행 함수 (공용) ────────────────────────────────────────

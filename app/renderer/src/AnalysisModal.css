@@ -1,0 +1,1476 @@
+/* ─── Overlay ────────────────────────────────────────────────────── */
+.am-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: am-fade-in 0.15s ease;
+}
+
+@keyframes am-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ─── Modal box ──────────────────────────────────────────────────── */
+.am-modal {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: am-slide-in 0.18s ease;
+}
+
+@keyframes am-slide-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ─── Header ─────────────────────────────────────────────────────── */
+.am-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.am-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.am-outcome-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.outcome-decided  { background: #1a3a2a; color: #4caf7d; border: 1px solid #2d5c3f; }
+.outcome-deadlock { background: #3a1a1a; color: #e06060; border: 1px solid #5c2d2d; }
+.outcome-paused   { background: #2a2a1a; color: #c8a44a; border: 1px solid #4a3d1a; }
+
+.am-close {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.1s, background 0.1s;
+}
+.am-close:hover { color: #ccc; background: #2a2a2a; }
+
+.am-goal {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 8px;
+}
+
+.am-summary {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.55;
+  font-style: italic;
+}
+
+/* ─── Body ───────────────────────────────────────────────────────── */
+.am-body {
+  overflow-y: auto;
+  padding: 8px 0 16px;
+  flex: 1;
+}
+
+/* ─── Section ────────────────────────────────────────────────────── */
+.am-section {
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid #242424;
+}
+.am-section:last-child { border-bottom: none; }
+.am-section-deadlock { background: rgba(90, 20, 20, 0.12); }
+
+.am-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+/* ─── Dominant stance ────────────────────────────────────────────── */
+.am-dominant-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #d0d0d0;
+}
+.am-dominant-reason {
+  font-size: 12px;
+  color: #888;
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+/* ─── Generic text ───────────────────────────────────────────────── */
+.am-text {
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.5;
+  margin: 0;
+}
+.am-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #777;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Actor chip ─────────────────────────────────────────────────── */
+.am-actor-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.actor-gpt    { background: #1a2a3a; color: #5bb0e8; border: 1px solid #2a4060; }
+.actor-claude { background: #2a1a3a; color: #b07ae8; border: 1px solid #4a2a70; }
+.actor-gemini { background: #1a2a1a; color: #5be88a; border: 1px solid #2a5a3a; }
+.actor-user   { background: #2a2a1a; color: #e8c85b; border: 1px solid #5a4a1a; }
+
+/* ─── Stance changes ─────────────────────────────────────────────── */
+.am-stance-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.am-stance-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #ccc;
+}
+.am-stance-val { color: #d0d0d0; }
+.am-arrow { color: #555; font-size: 11px; }
+
+/* ─── Progress drivers ───────────────────────────────────────────── */
+.am-driver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.am-driver-rank {
+  font-size: 11px;
+  color: #666;
+  width: 20px;
+  flex-shrink: 0;
+}
+.am-driver-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.am-driver-tag {
+  font-size: 11px;
+  background: #2a2a2a;
+  color: #aaa;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid #333;
+}
+
+/* ─── Novelty highlights ─────────────────────────────────────────── */
+.am-novelty-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #ccc;
+}
+.am-novelty-rationale {
+  font-size: 11px;
+  color: #777;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+/* ─── Repetitions ────────────────────────────────────────────────── */
+.am-rep-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.am-rep-value { color: #ccc; }
+.am-rep-count {
+  color: #e06060;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ─── Deadlock analysis ──────────────────────────────────────────── */
+.am-deadlock { display: flex; flex-direction: column; gap: 14px; }
+
+.am-deadlock-positions { display: flex; flex-direction: column; gap: 10px; }
+
+.am-deadlock-actor {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1a1a1a;
+  border: 1px solid #2e2020;
+  border-radius: 6px;
+}
+.am-deadlock-actor-content { font-size: 13px; color: #ccc; }
+.am-deadlock-premise {
+  font-size: 11px;
+  color: #888;
+  margin: 5px 0 0;
+  line-height: 1.45;
+}
+
+.am-deadlock-conflict,
+.am-deadlock-why {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #ccc;
+  line-height: 1.5;
+}
+.am-deadlock-why p { margin: 0; color: #aaa; }
+
+/* ─── Section accent: convergence ────────────────────────────────── */
+.am-section-convergence { border-left: 3px solid #4ade80; }
+
+/* ─── Novelty Decay Chart ────────────────────────────────────────── */
+.am-novelty-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 0 4px;
+  flex-wrap: wrap;
+}
+.am-novelty-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.am-novelty-bar {
+  width: 22px;
+  background: #4ade80;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  transition: height 0.2s;
+}
+.am-novelty-bar.am-novelty-bar-low { background: #f87171; }
+.am-novelty-bar-label {
+  font-size: 10px;
+  color: #666;
+}
+.am-novelty-stagnation {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #f87171;
+  align-self: center;
+}
+
+/* ─── Convergence Chart ──────────────────────────────────────────── */
+.am-convergence-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+.am-conv-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.am-conv-bar {
+  width: 22px;
+  background: #60a5fa;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+}
+.am-conv-bar.am-conv-bar-high { background: #4ade80; }
+
+/* ─── Unresolved Conflicts ───────────────────────────────────────── */
+.am-conflict-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+.am-conflict-row:last-child { border-bottom: none; }
+.am-conflict-dim {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 6px;
+}
+.am-conflict-pos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.am-conflict-stance {
+  font-size: 12px;
+  color: #ccc;
+}
+
+/* ─── Synthesis Header ───────────────────────────────────────────── */
+.am-synthesis-header { display: flex; flex-direction: column; gap: 6px; }
+
+.am-synthesis-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.am-synthesis-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  letter-spacing: 0.3px;
+}
+.am-synthesis-conf {
+  font-size: 11px;
+  color: #4ade80;
+  font-weight: 600;
+}
+.am-synthesis-basis {
+  font-size: 11px;
+  color: #666;
+}
+.am-synthesis-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e8e8e8;
+  line-height: 1.5;
+}
+.am-summary-secondary {
+  font-size: 11px;
+  color: #555;
+  margin-top: 2px;
+}
+
+/* ─── Shared Concepts ────────────────────────────────────────────── */
+.am-shared-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+.am-concept-chip {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  cursor: default;
+}
+.am-unresolved-chip {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+.am-synthesis-note-body {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+}
+
+/* ─── Absorbed Arguments ─────────────────────────────────────────── */
+.am-absorbed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid #1e1e1e;
+}
+.am-absorbed-row:last-child { border-bottom: none; }
+.am-absorbed-arrow {
+  font-size: 11px;
+  color: #60a5fa;
+}
+.am-absorbed-concept {
+  font-size: 12px;
+  color: #aaa;
+}
+
+/* ─── Final Conclusion ───────────────────────────────────────────── */
+.am-fc { display: flex; flex-direction: column; gap: 10px; }
+
+.am-fc-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.am-fc-source-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.am-fc-synthesis {
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.am-fc-hybrid {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+.am-fc-selected {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+.am-fc-branch {
+  background: rgba(167, 139, 250, 0.18);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.40);
+}
+.am-fc-conf {
+  font-size: 12px;
+  color: #aaa;
+}
+.am-fc-reason {
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.5;
+  margin: 0;
+}
+.am-fc-revids {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.am-fc-revid-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.am-fc-revid-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  color: #888;
+  font-family: monospace;
+}
+.am-fc-vs { display: flex; flex-direction: column; gap: 4px; }
+.am-fc-vs-text { font-size: 12px; color: #888; line-height: 1.5; margin: 0; }
+
+/* ─── synthesis-tag variant for hybrid ──────────────────────────── */
+.am-fc-tag-synthesis {
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.am-fc-tag-hybrid {
+  background: rgba(96, 165, 250, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+.am-fc-tag-branch {
+  background: rgba(167, 139, 250, 0.18);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.40);
+}
+
+/* ─── Section accent: saturation ─────────────────────────────────── */
+.am-section-saturation { border-left: 3px solid #f59e0b; }
+
+/* ─── Saturation view ────────────────────────────────────────────── */
+.am-saturation { display: flex; flex-direction: column; gap: 10px; }
+
+.am-saturation-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.am-saturation-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.am-saturation-badge.am-sat-active {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.am-saturation-badge.am-sat-inactive {
+  background: rgba(100, 100, 100, 0.15);
+  color: #888;
+  border: 1px solid #333;
+}
+.am-saturation-conf {
+  font-size: 12px;
+  color: #f59e0b;
+  font-weight: 600;
+}
+.am-saturation-reason {
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.5;
+  margin: 0;
+}
+.am-saturation-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.am-saturation-novelty { color: #60a5fa; font-weight: 600; }
+.am-saturation-novelty.am-sat-low { color: #f87171; }
+
+.am-saturation-clusters {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.am-cluster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1e1e1e;
+  font-size: 12px;
+}
+.am-cluster-row:last-child { border-bottom: none; }
+.am-cluster-count {
+  min-width: 32px;
+  color: #f59e0b;
+  font-weight: 700;
+  font-size: 11px;
+}
+.am-cluster-canonical { color: #ccc; flex: 1; }
+.am-cluster-actors { color: #666; font-size: 11px; }
+
+/* ─── Synthesis quality bar ──────────────────────────────────────── */
+.am-quality-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.am-quality-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.am-quality-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #4ade80);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.am-quality-score {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4ade80;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ─── Convergence Freeze (수렴 동결 분석) ───────────────────────── */
+
+.am-cf-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.am-cf-freeze-badge {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+.am-cf-frozen {
+  background: rgba(167, 139, 250, 0.20);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.45);
+}
+.am-cf-active {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.am-cf-frozen-at {
+  font-size: 11px;
+  color: #8899aa;
+}
+.am-cf-entropy {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8899aa;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.am-cf-entropy-bar-inline {
+  display: inline-block;
+  height: 4px;
+  background: linear-gradient(90deg, #a78bfa, #60a5fa);
+  border-radius: 2px;
+  min-width: 4px;
+}
+.am-cf-moment {
+  font-size: 12px;
+  color: #c4b5fd;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: rgba(167, 139, 250, 0.08);
+  border-left: 3px solid rgba(167, 139, 250, 0.40);
+  border-radius: 0 4px 4px 0;
+}
+.am-cf-novelty-section {
+  margin-bottom: 10px;
+}
+.am-cf-sub-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7a8d;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.am-cf-graph {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 60px;
+  padding: 0 2px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.am-cf-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 10px;
+  max-width: 28px;
+  height: 100%;
+  cursor: default;
+}
+.am-cf-bar-track {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+}
+.am-cf-bar-fill {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  transition: height 0.3s;
+}
+.am-cf-bar-zero  { background: rgba(248, 113, 113, 0.55); }
+.am-cf-bar-low   { background: rgba(251, 191, 36, 0.55); }
+.am-cf-bar-ok    { background: rgba(74, 222, 128, 0.55); }
+.am-cf-bar-label {
+  font-size: 8px;
+  color: #667788;
+  line-height: 1;
+  text-align: center;
+}
+.am-cf-label-meaningful { color: #fbbf24; font-weight: 700; }
+.am-cf-label-freeze     { color: #f87171; font-weight: 700; }
+.am-cf-label-collapse   { color: #a78bfa; font-weight: 700; }
+.am-cf-graph-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.am-cf-leg {
+  font-size: 10px;
+  opacity: 0.75;
+}
+.am-cf-leg-meaningful { color: #fbbf24; }
+.am-cf-leg-freeze     { color: #f87171; }
+.am-cf-leg-collapse   { color: #a78bfa; }
+.am-cf-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.am-cf-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.am-cf-stat-label {
+  font-size: 11px;
+  color: #8899aa;
+  width: 110px;
+  flex-shrink: 0;
+}
+.am-cf-stat-bar-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.am-cf-stat-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+.am-cf-ent-low  { background: linear-gradient(90deg, #f87171, #fbbf24); }
+.am-cf-ent-mid  { background: linear-gradient(90deg, #fbbf24, #60a5fa); }
+.am-cf-ent-high { background: linear-gradient(90deg, #4ade80, #60a5fa); }
+.am-cf-stat-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: #dde4f0;
+  width: 32px;
+  text-align: right;
+}
+.am-cf-last-meaningful {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.am-cf-rev-id {
+  font-size: 12px;
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+/* ─── Branch Survival (생존한 논리 Branch) ──────────────────────── */
+
+.am-bs-summary {
+  font-size: 12px;
+  color: #b0b8c8;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.am-bs-branch {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.am-bs-dominant {
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.06);
+}
+.am-bs-branch-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.am-bs-dominant-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(167, 139, 250, 0.22);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.40);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.am-bs-actors {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.am-bs-survival-score {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a78bfa;
+}
+.am-bs-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.am-bs-stat {
+  font-size: 11px;
+  color: #8899aa;
+}
+.am-bs-stat-warn {
+  color: #f87171;
+}
+.am-bs-concepts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.am-bs-concept-chip {
+  font-size: 10px;
+  background: rgba(167, 139, 250, 0.12);
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.am-bs-final-value {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(167, 139, 250, 0.20);
+}
+.am-bs-final-label {
+  font-size: 10px;
+  color: #a78bfa;
+  font-weight: 600;
+}
+.am-bs-final-text {
+  font-size: 12px;
+  color: #dde4f0;
+  line-height: 1.5;
+}
+
+/* ─── Evolution Pressure (논리 진화 압력) ───────────────────────── */
+
+.am-ep-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.am-ep-stagnation { display: flex; flex-direction: column; gap: 4px; }
+
+.am-ep-stag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.am-ep-stag-label {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.am-ep-stag-val {
+  font-size: 12px;
+  font-weight: 700;
+}
+.am-ep-stag-low  { color: #4ade80; }
+.am-ep-stag-mid  { color: #f59e0b; }
+.am-ep-stag-high { color: #f87171; }
+
+.am-ep-stag-track {
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.am-ep-stag-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.am-ep-stag-fill-low  { background: #4ade80; }
+.am-ep-stag-fill-mid  { background: #f59e0b; }
+.am-ep-stag-fill-high { background: #f87171; }
+
+.am-ep-decay-actors {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.am-ep-decay-chip {
+  opacity: 0.75;
+  font-size: 10px;
+}
+
+.am-ep-sub-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  margin-bottom: 5px;
+}
+
+.am-ep-momentum { display: flex; flex-direction: column; gap: 5px; }
+
+.am-ep-momentum-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.am-ep-momentum-bar-track {
+  flex: 1;
+  height: 5px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.am-ep-momentum-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #22d3ee);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.am-ep-momentum-score {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4ade80;
+  width: 28px;
+  text-align: right;
+}
+.am-ep-momentum-event {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #6b7280;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.am-ep-innovations { display: flex; flex-direction: column; gap: 4px; }
+
+.am-ep-innov-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  background: #0d1520;
+  border: 1px solid #1e2d3d;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.am-ep-innov-rev {
+  font-size: 10px;
+  color: #4b5563;
+  flex-shrink: 0;
+  width: 28px;
+}
+.am-ep-innov-desc {
+  flex: 1;
+  color: #c9d1d9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.am-ep-innov-score {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+/* ─── Convergence Flow (논리 수렴 과정) ──────────────────────────── */
+
+.am-cf-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.am-cf-phase {
+  background: #14202a;
+  border: 1px solid #1e3044;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.am-cf-phase-final {
+  background: #0d1f14;
+  border-color: #1e3a2a;
+}
+
+.am-cf-phase-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b7280;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+
+.am-cf-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.am-cf-item:last-child { margin-bottom: 0; }
+
+.am-cf-text {
+  color: #c9d1d9;
+  line-height: 1.4;
+}
+
+.am-cf-stance {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.am-cf-stance-refine  { background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.25); }
+.am-cf-stance-concede { background: rgba(96, 165, 250, 0.12); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.25); }
+.am-cf-stance-defend  { background: rgba(239, 68, 68, 0.12);  color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
+
+.am-cf-arrow {
+  text-align: center;
+  font-size: 11px;
+  color: #4b5563;
+  padding: 4px 0;
+  letter-spacing: 0.5px;
+}
+
+.am-cf-final-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4ade80;
+  line-height: 1.5;
+}
+
+/* ─── Argument Graph View ─────────────────────────────────────────── */
+
+.ag-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 메타 요약 행 */
+.ag-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ag-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #1a1a2e;
+  border: 1px solid #2d2d44;
+  border-radius: 6px;
+  padding: 6px 10px;
+  flex: 1;
+  min-width: 140px;
+}
+.ag-meta-item.ag-loop-warning {
+  border-color: #dc2626;
+  background: #1a0a0a;
+}
+.ag-meta-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ag-meta-value {
+  font-size: 12px;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.ag-absorbed {
+  color: #fbbf24;
+  font-style: italic;
+}
+
+/* 본문 레이아웃 (체인 + 순위) */
+.ag-body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* 체인 섹션 */
+.ag-chain-section {
+  flex: 1;
+  min-width: 0;
+}
+.ag-chain-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.ag-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.ag-chain-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* 엣지 커넥터 */
+.ag-edge-connector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  margin: 0 4px;
+}
+.ag-edge-arrow {
+  font-size: 13px;
+  color: #475569;
+}
+.ag-edge-label {
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.ag-rel-refines   .ag-edge-label { color: #34d399; background: #034d26; }
+.ag-rel-concedes  .ag-edge-label { color: #60a5fa; background: #1e3a5f; }
+.ag-rel-criticizes .ag-edge-label { color: #f87171; background: #4a1717; }
+.ag-rel-supports  .ag-edge-label { color: #a78bfa; background: #2e1a5e; }
+.ag-rel-synthesizes .ag-edge-label { color: #fbbf24; background: #453010; }
+.ag-rel-repeats   .ag-edge-label { color: #94a3b8; background: #1e2535; }
+
+/* 노드 카드 */
+.ag-node {
+  background: #12131e;
+  border: 1px solid #2d2d44;
+  border-radius: 6px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ag-node.ag-node-highlight {
+  border-color: #fbbf24;
+  background: #1a1505;
+}
+.ag-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ag-node-text {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+/* Actor chip */
+.ag-actor-chip {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* Stance tag */
+.ag-stance-tag {
+  font-size: 10px;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.ag-stance-refine  { color: #34d399; background: #034d2633; }
+.ag-stance-concede { color: #60a5fa; background: #1e3a5f33; }
+.ag-stance-defend  { color: #f87171; background: #4a171733; }
+
+/* 영향력 점 */
+.ag-influence-dots {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.ag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2d2d44;
+}
+.ag-dot-filled {
+  background: #fbbf24;
+}
+
+/* 영향력 순위 패널 */
+.ag-influence-panel {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ag-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: #12131e;
+  border: 1px solid #2d2d44;
+}
+.ag-rank-row.ag-rank-top {
+  border-color: #fbbf2466;
+  background: #1a150533;
+}
+.ag-rank-num {
+  font-size: 10px;
+  color: #64748b;
+  min-width: 18px;
+}
+.ag-rank-text {
+  font-size: 11px;
+  color: #94a3b8;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 기타 노드 그리드 */
+.ag-side-nodes {
+  border-top: 1px solid #2d2d44;
+  padding-top: 10px;
+}
+.ag-side-title {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.ag-side-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+/* 범례 */
+.ag-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #1e2535;
+}
+.ag-legend-item {
+  font-size: 10px;
+  border-radius: 3px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+}
+.ag-legend-item.ag-rel-refines    { color: #34d399; border-color: #034d26; }
+.ag-legend-item.ag-rel-concedes   { color: #60a5fa; border-color: #1e3a5f; }
+.ag-legend-item.ag-rel-criticizes { color: #f87171; border-color: #4a1717; }
+.ag-legend-item.ag-rel-supports   { color: #a78bfa; border-color: #2e1a5e; }
+.ag-legend-item.ag-rel-repeats    { color: #94a3b8; border-color: #2d2d44; }
+
+/* ─── Segment Tabs ───────────────────────────────────────────────── */
+.am-segment-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 0;
+  border-bottom: 1px solid #1e2535;
+  background: #0d1117;
+  flex-wrap: wrap;
+}
+.am-segment-tab {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.am-segment-tab:hover {
+  color: #94a3b8;
+}
+.am-segment-tab-active {
+  color: #38bdf8;
+  border-bottom-color: #38bdf8;
+}
+
+/* ─── Segment Interjection Banner ────────────────────────────────── */
+.am-segment-interjection {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: rgba(56, 189, 248, 0.07);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.am-segment-interjection-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: #38bdf8;
+  padding: 1px 6px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  margin-top: 1px;
+}
+.am-segment-interjection-text {
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+/* ─── Segment Evolution Timeline ─────────────────────────────────── */
+.am-segment-evolution {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid #1e2535;
+  border-radius: 8px;
+}
+.am-segment-evolution-timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.am-segment-evolution-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+.am-segment-evolution-node {
+  min-width: 140px;
+  max-width: 200px;
+  padding: 10px 12px;
+  background: #0d1117;
+  border: 1px solid #1e2535;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.am-segment-evolution-node-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.am-segment-evolution-interjection {
+  font-size: 10px;
+  color: #64748b;
+  font-style: italic;
+  line-height: 1.4;
+}
+.am-segment-evolution-conclusion {
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+.am-segment-evolution-meta {
+  font-size: 10px;
+  color: #475569;
+}
+.am-segment-arrow {
+  align-self: center;
+  padding: 0 10px;
+  color: #334155;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+/* ─── Full Analysis Collapse ─────────────────────────────────────── */
+.am-full-analysis-collapse {
+  margin-top: 4px;
+  border: 1px solid #1e2535;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.am-collapse-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(30, 37, 53, 0.5);
+  border: none;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, background 0.15s;
+}
+.am-collapse-toggle:hover {
+  color: #94a3b8;
+  background: rgba(30, 37, 53, 0.8);
+}
+.am-collapse-toggle span {
+  font-size: 10px;
+}
+
+/* ─── Structural Consensus Tag ───────────────────────────────────── */
+.am-fc-tag-structural {
+  background: rgba(167, 139, 250, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+.am-fc-structural {
+  background: rgba(167, 139, 250, 0.12);
+  color: #a78bfa;
+}

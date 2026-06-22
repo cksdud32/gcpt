@@ -3,6 +3,11 @@ import { RevisionStore } from "../RevisionStore.js";
 import { Revision, DEPTH_BUDGETS, StanceAction } from "../types.js";
 import { Metrics } from "../metrics.js";
 import { getModeInstruction } from "./mode-instruction.js";
+import {
+  findCurrentSegmentStartRevId,
+  buildSegmentContext,
+  getSegmentPriorProposals,
+} from "./segment-context.js";
 
 const VALID_STANCE_ACTIONS = new Set<string>(["defend", "refine", "concede", "propose"]);
 
@@ -61,47 +66,6 @@ function parseResponse(raw: string): ProposalResponse | null {
   }
 }
 
-function buildContext(store: RevisionStore, capturedGoalRevId: number): string {
-  const history = store.getHistory();
-  const start = history.findIndex((r) => r.id === capturedGoalRevId);
-  const topicRevs = start >= 0 ? history.slice(start) : [];
-
-  const foreign = topicRevs.filter(
-    (r) => r.patch.payload.type === "set_goal" && r.id !== capturedGoalRevId
-  );
-  if (foreign.length > 0) {
-    console.warn(
-      `[buildContext][Claude] 오염 감지: goalRevId=${capturedGoalRevId}에 ` +
-      `다른 topic set_goal ${foreign.length}개 포함 (ids: ${foreign.map(r => r.id).join(",")})`
-    );
-  }
-
-  return topicRevs
-    .filter((r) => r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative")
-    .map((r) => {
-      const p = r.patch.payload as { value: string; reason: string };
-      return `- [${r.author}] ${p.value}: ${p.reason}`;
-    })
-    .join("\n");
-}
-
-/** Claude의 이전 발언 추출 */
-function getMyPriorProposals(
-  store: RevisionStore,
-  capturedGoalRevId: number,
-): Array<{ value: string; reason: string }> {
-  const history = store.getHistory();
-  const start   = history.findIndex(r => r.id === capturedGoalRevId);
-  return (start >= 0 ? history.slice(start) : [])
-    .filter(r =>
-      r.author === "claude" &&
-      (r.patch.payload.type === "propose_decision" || r.patch.payload.type === "propose_alternative"),
-    )
-    .map(r => ({
-      value:  (r.patch.payload as { value: string }).value,
-      reason: (r.patch.payload as { value: string; reason: string }).reason,
-    }));
-}
 
 const SYSTEM = `You are a technical advisor in a multi-AI decision system.
 Your role is to provide thoughtful counter-proposals to existing suggestions.
@@ -128,6 +92,14 @@ export class RealClaudeWorker {
   private spokenAt = new Map<number, number>();
   private readonly maxPerTopic:          number;
   private readonly maxDistinctProposals: number;
+  private phaseInstruction = "";
+  private memoryContext    = "";
+
+  setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
+  setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  private phaseNote(): string {
+    return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
+  }
 
   constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: import("../types.js").DiscussionBudget, private model = "claude-haiku-4-5-20251001") {
     this.client = new Anthropic({ apiKey });
@@ -153,10 +125,13 @@ export class RealClaudeWorker {
 
     const challenger = rev.patch.payload as { value: string; reason: string };
     const challengerName = rev.author === "gemini" ? "Gemini" : "GPT";
-    const ctx = buildContext(this.store, capturedGoalRevId);
 
-    // 내 이전 발언 파악 → defend/concede/propose 계층 prompt
-    const myPrior       = getMyPriorProposals(this.store, capturedGoalRevId);
+    // 현재 세그먼트만 사용 — 이전 세그먼트 score 오염 방지
+    const segmentStartRevId = findCurrentSegmentStartRevId(this.store, capturedGoalRevId);
+    const ctx = buildSegmentContext(this.store, capturedGoalRevId, segmentStartRevId, this.memoryContext);
+
+    // 내 이전 발언 파악 → defend/concede/propose 계층 prompt (현재 세그먼트만)
+    const myPrior       = getSegmentPriorProposals(this.store, "claude", capturedGoalRevId, segmentStartRevId);
     const myLast        = myPrior[myPrior.length - 1];
     const distinctCount = new Set(myPrior.map(p => p.value.trim().toLowerCase())).size;
     const limitReached  = distinctCount >= this.maxDistinctProposals;
@@ -171,7 +146,7 @@ export class RealClaudeWorker {
         ? `\n⚠ You have already introduced ${distinctCount} distinct option(s). You MUST choose DEFEND or CONCEDE — do NOT propose another new option.\n`
         : "";
       userContent =
-        `${modeInstruction}\n${langNote}\nGoal: "${goal}"\n\n` +
+        `${modeInstruction}\n${langNote}${this.phaseNote()}\nGoal: "${goal}"\n\n` +
         `Your current position: "${myLast.value}" — ${myLast.reason}\n` +
         `${challengerName} challenges: "${challenger.value}" — ${challenger.reason}\n\n` +
         `Full discussion:\n${ctx}\n` +
@@ -184,7 +159,7 @@ export class RealClaudeWorker {
         `Respond with JSON:\n{"value":"...","reason":"...","rationale":"...","stanceAction":"defend|refine|concede|propose"}`;
     } else {
       userContent =
-        `${modeInstruction}\n${langNote}\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\n` +
+        `${modeInstruction}\n${langNote}${this.phaseNote()}\nGoal: "${goal}"\n\nExisting proposals:\n${ctx}\n\n` +
         `${challengerName} proposed "${challenger.value}" (${challenger.reason}).\n\n` +
         `Identify one specific weakness of ${challengerName}'s proposal, then propose a better alternative.\n\n` +
         `Respond with JSON:\n{"value":"...","reason":"...","rationale":"...","stanceAction":"defend|refine|concede|propose"}`;
