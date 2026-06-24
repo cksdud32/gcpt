@@ -462,11 +462,11 @@ const GOAL_SETS: Record<string, string[]> = {
 
 // Actor 메타데이터 — label + color (새 actor 추가 시 여기만 수정)
 const ACTOR_META: Record<string, { label: string; color: string }> = {
-  user:   { label: "User",   color: "#858585" },
+  user:   { label: "사용자", color: "#858585" },
   gpt:    { label: "GPT",    color: "#4ec9b0" },
   claude: { label: "Claude", color: "#c586c0" },
   gemini: { label: "Gemini", color: "#f4a261" },
-  system: { label: "System", color: "#6a9fb5" },
+  system: { label: "최종 정리", color: "#6a9fb5" },
 };
 type PassMap = Record<string, "pass" | "fail" | null>;
 type AppView = "engine" | "workspace";
@@ -535,6 +535,10 @@ export default function App() {
   const [aiProcessing,   setAiProcessing]   = useState(false); // AI worker가 실제 연산 중인지
   const [liveResult,     setLiveResult]     = useState<RunResult | null>(null);
   const [liveStatus,     setLiveStatus]     = useState("");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = localStorage.getItem("gcpt-theme");
+    return saved === "dark" ? "dark" : "light";
+  });
 
   // sessions → 단일 merged RunResult (기존 코드 인터페이스 유지)
   const result = useMemo(
@@ -604,6 +608,10 @@ export default function App() {
     const cleanup = window.api.onFirstRun(() => setProviderSettingsOpen(true));
     return cleanup;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    localStorage.setItem("gcpt-theme", theme);
+  }, [theme]);
 
   // ── localStorage 복원 (mount 1회) ───────────────────────────────
   useEffect(() => {
@@ -722,6 +730,10 @@ export default function App() {
   }
 
   async function runSelected() {
+    if (selected === "custom") {
+      await runCustom();
+      return;
+    }
     if (liveEnabled) {
       await startLiveRun(GOAL_SETS[selected] ?? ["데이터베이스 기술 스택 결정"], discussionMode);
     } else {
@@ -916,6 +928,18 @@ export default function App() {
     setRunning(false);
   }
 
+  // 새 토론 — 입력(홈) 화면으로 초기화. 진행 중에는 안전하게 무시한다.
+  function goHome() {
+    if (running || aiProcessing) return;
+    setSessions([]);
+    setLiveResult(null);
+    setSelectedTopicIdx(null);
+    setSelectedRevId(null);
+    setPassMap({});
+    setSelected("custom");
+    setCustomGoal("");
+  }
+
   // Live 버튼 — 실행 방식 토글만 담당 (실행 자체는 runSelected/runCustom에서 처리)
   function toggleLive() {
     setLiveEnabled(prev => !prev);
@@ -1102,7 +1126,7 @@ export default function App() {
   }, [aiProcessing, discussionDepth, liveStatus, liveResult]);
 
   return (
-    <div className="app">
+    <div className={`app theme-${theme} ${!displayResult && !aiProcessing ? "app-empty" : "app-active"}`}>
       {analysisModal && (
         <AnalysisModal
           goal={analysisModal.topic.goal}
@@ -1110,6 +1134,17 @@ export default function App() {
           topic={analysisModal.topic}
           history={result?.history}
           onClose={() => setAnalysisModal(null)}
+        />
+      )}
+      {providerSettingsOpen && (
+        <SettingsModal
+          providerSettings={providerSettings}
+          onProviderSettingsChange={async (next) => {
+            setProviderSettings(next);
+            await window.api.saveProviderSettings(next);
+          }}
+          running={running || aiProcessing}
+          onClose={() => setProviderSettingsOpen(false)}
         />
       )}
       <Header
@@ -1131,6 +1166,8 @@ export default function App() {
         sessionStatus={sessionStatus}
         discussionDepth={discussionDepth}
         onStopDiscussion={handleStopDiscussion}
+        theme={theme}
+        onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
       />
       {view === "engine" ? (
         <>
@@ -1140,6 +1177,7 @@ export default function App() {
               selected={selected}
               passMap={passMap}
               onSelect={setSelected}
+              onNewDiscussion={goHome}
               customGoal={customGoal}
               onCustomGoalChange={setCustomGoal}
               onCustomRun={runCustom}
@@ -1160,8 +1198,17 @@ export default function App() {
                 await window.api.saveProviderSettings(next);
               }}
               providerSettingsOpen={providerSettingsOpen}
-              onProviderSettingsToggle={() => setProviderSettingsOpen(o => !o)}
+              onProviderSettingsToggle={() => setProviderSettingsOpen(true)}
+              recentTopics={(displayResult?.topics ?? []).slice(-6).reverse()}
             />
+            {!displayResult && !aiProcessing ? (
+              <WelcomeScreen
+                customGoal={customGoal}
+                onCustomGoalChange={setCustomGoal}
+                onCustomRun={runCustom}
+                running={running || aiProcessing}
+              />
+            ) : (
             <div className="panels">
               <ErrorBoundary label="Topic Panel">
                 <TopicPanel
@@ -1200,6 +1247,7 @@ export default function App() {
                 />
               </ErrorBoundary>
             </div>
+            )}
           </div>
           <MetricsBar result={displayResult} />
         </>
@@ -1220,12 +1268,173 @@ export default function App() {
   );
 }
 
+function WelcomeScreen({ customGoal, onCustomGoalChange, onCustomRun, running }: {
+  customGoal: string;
+  onCustomGoalChange: (v: string) => void;
+  onCustomRun: () => void;
+  running: boolean;
+}) {
+  const examples = [
+    "새 SaaS 제품의 첫 기능 우선순위를 정해줘",
+    "우리 팀에 맞는 데이터베이스 기술 스택을 토론해줘",
+    "주말에 할 만한 창의적인 프로젝트 아이디어를 골라줘",
+  ];
+
+  return (
+    <main className="welcome-screen">
+      <section className="prompt-hero">
+        <div className="prompt-kicker">AI 협업 토론 워크스페이스</div>
+        <h2>무엇을 결정할까요?</h2>
+        <p>주제를 입력하면 GPT, Claude, Gemini가 각자의 관점으로 검토하고 하나의 결론으로 정리합니다.</p>
+        <div className="prompt-box">
+          <textarea
+            className="prompt-input"
+            placeholder="예: 다음 분기 제품 로드맵에서 가장 먼저 집중할 기능을 정해줘"
+            value={customGoal}
+            onChange={e => onCustomGoalChange(e.target.value)}
+            onKeyDown={e => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !running) onCustomRun();
+            }}
+            disabled={running}
+          />
+          <button
+            className="prompt-submit"
+            onClick={onCustomRun}
+            disabled={running || !customGoal.trim()}
+          >
+            {running ? "토론 준비 중..." : "토론 시작하기"}
+          </button>
+        </div>
+        <div className="example-grid">
+          {examples.map(text => (
+            <button
+              key={text}
+              className="example-card"
+              onClick={() => onCustomGoalChange(text)}
+              disabled={running}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function sanitizeProviderError(message: unknown) {
+  return String(message ?? "실패").replace(/sk-[A-Za-z0-9_-]+/g, "API_KEY");
+}
+
+function SettingsModal({ providerSettings, onProviderSettingsChange, running, onClose }: {
+  providerSettings: ProvidersConfig;
+  onProviderSettingsChange: (s: ProvidersConfig) => void;
+  running: boolean;
+  onClose: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+
+  async function handleTestConnection(provider: "gpt" | "claude" | "gemini") {
+    setTestStatus(prev => ({ ...prev, [provider]: "확인 중..." }));
+    const res = await window.api.testProviderConnection(provider);
+    setTestStatus(prev => ({
+      ...prev,
+      [provider]: res.ok ? `연결됨 · ${res.latency}ms` : sanitizeProviderError(res.error).slice(0, 80),
+    }));
+  }
+
+  const providerLabel = (p: "gpt" | "claude" | "gemini") =>
+    p === "gpt" ? "OpenAI" : p === "claude" ? "Claude" : "Gemini";
+
+  return (
+    <div className="settings-backdrop" onMouseDown={onClose}>
+      <div className="settings-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="settings-header">
+          <div>
+            <h2>설정</h2>
+            <p>AI 연결 상태와 모델을 관리합니다. API 키는 저장된 설정에서만 사용됩니다.</p>
+          </div>
+          <button className="settings-close" onClick={onClose}>닫기</button>
+        </div>
+        <div className="settings-provider-grid">
+          {(["gpt", "claude", "gemini"] as const).map(p => {
+            const cfg = providerSettings[p];
+            const label = providerLabel(p);
+            const models = p === "gpt"
+              ? ["gpt-5-mini", "gpt-5", "gpt-4o"]
+              : p === "claude"
+              ? ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
+              : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
+
+            return (
+              <section key={p} className={`settings-provider-card ${cfg.enabled ? "is-on" : "is-off"}`}>
+                <div className="settings-provider-top">
+                  <strong>{label}</strong>
+                  <span className={`settings-status ${cfg.enabled && cfg.apiKey ? "ready" : "idle"}`}>
+                    {cfg.enabled && cfg.apiKey ? "사용 가능" : cfg.enabled ? "키 필요" : "꺼짐"}
+                  </span>
+                </div>
+                <p>{cfg.model}</p>
+                {testStatus[p] && <div className="settings-test-result">{testStatus[p]}</div>}
+                {editing && (
+                  <div className="settings-edit-fields">
+                    <label>
+                      활성화
+                      <input
+                        type="checkbox"
+                        checked={cfg.enabled}
+                        onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, enabled: e.target.checked } })}
+                        disabled={running}
+                      />
+                    </label>
+                    <input
+                      className="provider-apikey-input"
+                      type="password"
+                      placeholder={`${label} API Key`}
+                      value={cfg.apiKey}
+                      onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, apiKey: e.target.value } })}
+                      disabled={running}
+                      autoComplete="off"
+                    />
+                    <select
+                      className="provider-model-select"
+                      value={cfg.model}
+                      onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, model: e.target.value } })}
+                      disabled={running}
+                    >
+                      {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
+                <button
+                  className="settings-test-btn"
+                  onClick={() => handleTestConnection(p)}
+                  disabled={running || !cfg.apiKey}
+                >
+                  연결 확인
+                </button>
+              </section>
+            );
+          })}
+        </div>
+        <div className="settings-footer">
+          <button className="settings-secondary" onClick={() => setEditing(v => !v)}>
+            {editing ? "저장하기" : "수정하기"}
+          </button>
+          <button className="primary" onClick={onClose}>완료</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Header ──────────────────────────────────────────────────────
 
 function Header({ view, onViewChange, executionRunning, liveSessionActive, liveStatus, label,
                   onRun, onRunAll, liveEnabled, onToggleLive,
                   canSave, onSave, canSaveTopic, onSaveTopic, onLoad, sessionStatus,
-                  discussionDepth, onStopDiscussion }: {
+                  discussionDepth, onStopDiscussion, theme, onToggleTheme }: {
   view: AppView; onViewChange: (v: AppView) => void;
   executionRunning: boolean;
   liveSessionActive: boolean;
@@ -1239,12 +1448,13 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
   sessionStatus: string;
   discussionDepth?: DiscussionDepth;
   onStopDiscussion?: () => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
 }) {
-  // 상태 텍스트: 3단계 (연산 중 / 세션 idle / 일반)
   const statusText = executionRunning
-    ? `● ${liveStatus || `AI discussing... ${label}`}`
+    ? `● ${liveStatus || `AI 토론 중... ${label}`}`
     : liveSessionActive
-    ? "● Live session active"
+    ? "● 실시간 세션 활성화"
     : sessionStatus
     ? sessionStatus
     : view === "engine" && label
@@ -1266,23 +1476,29 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
         <button
           className={`view-tab ${view === "engine" ? "active" : ""}`}
           onClick={() => onViewChange("engine")}
-        >Revision Engine</button>
+        >토론</button>
         <button
           className={`view-tab ${view === "workspace" ? "active" : ""}`}
           onClick={() => onViewChange("workspace")}
-        >Workspace Editor</button>
+        >워크스페이스</button>
       </div>
+      <button
+        className="theme-toggle"
+        onClick={onToggleTheme}
+        title={theme === "dark" ? "화이트 모드로 전환" : "다크 모드로 전환"}
+      >
+        {theme === "dark" ? "다크" : "화이트"}
+      </button>
       {view === "engine" && (
         <>
-          {/* 실행/전체테스트: AI 연산 중에만 잠금 */}
-          <button className="primary" onClick={onRun} disabled={executionRunning}>▶ 실행</button>
+          <button className="primary" onClick={onRun} disabled={executionRunning}>실행</button>
           <button
             className={`live-btn ${liveEnabled ? "active" : ""}`}
             onClick={onToggleLive}
             disabled={executionRunning}
-            title={liveEnabled ? "Live OFF — 클릭하면 일반 모드로 전환" : "Live ON — 클릭하면 실시간 토론 모드로 전환"}
+            title={liveEnabled ? "실시간 모드 끄기" : "실시간 토론 모드 켜기"}
           >
-            {liveEnabled ? "⚡ Live ON" : "⚡ Live OFF"}
+            {liveEnabled ? "실시간 켜짐" : "실시간 꺼짐"}
           </button>
           {discussionDepth === "until_consensus" && executionRunning && (
             <button
@@ -1290,32 +1506,34 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
               onClick={onStopDiscussion}
               title="토론 중지 — 현재까지의 제안을 수동 채택 대기 상태로 일시 정지합니다"
             >
-              ⏹ 토론 중지
+              토론 중지
             </button>
           )}
-          <button
-            onClick={onRunAll}
-            disabled={executionRunning || liveEnabled}
-            title={liveEnabled ? "전체 테스트는 Live 모드 미지원" : ""}
-          >전체 테스트</button>
-          <div className="header-sep" />
-          {/* 선택 토론 저장: topic 선택 시에만 활성화 */}
-          <button
-            onClick={onSaveTopic}
-            disabled={executionRunning || !canSaveTopic}
-            title={canSaveTopic ? "선택한 토론 저장 (JSON)" : "저장할 토론을 선택하세요"}
-          >
-            저장
-          </button>
-          {/* 전체 세션 저장 */}
-          <button
-            onClick={onSave}
-            disabled={executionRunning || !canSave}
-            title="전체 세션 저장 (JSON)"
-          >
-            전체 저장
-          </button>
-          <button onClick={onLoad} disabled={executionRunning} title="세션 불러오기">불러오기</button>
+          <details className="header-more">
+            <summary>더보기</summary>
+            <div className="header-more-menu">
+              <button
+                onClick={onRunAll}
+                disabled={executionRunning || liveEnabled}
+                title={liveEnabled ? "전체 테스트는 실시간 모드 미지원" : ""}
+              >전체 테스트</button>
+              <button
+                onClick={onSaveTopic}
+                disabled={executionRunning || !canSaveTopic}
+                title={canSaveTopic ? "선택한 토론 저장 (JSON)" : "저장할 토론을 선택하세요"}
+              >
+                선택 토론 저장
+              </button>
+              <button
+                onClick={onSave}
+                disabled={executionRunning || !canSave}
+                title="전체 세션 저장 (JSON)"
+              >
+                전체 저장
+              </button>
+              <button onClick={onLoad} disabled={executionRunning} title="세션 불러오기">불러오기</button>
+            </div>
+          </details>
         </>
       )}
       <span className={`status ${statusClass}`}>{statusText}</span>
@@ -1333,9 +1551,12 @@ function Sidebar({ modes, selected, passMap, onSelect,
                    safetyLimitEnabled, onSafetyLimitEnabledChange,
                    interactionStyle, onInteractionStyleChange,
                    providerSettings, onProviderSettingsChange,
-                   providerSettingsOpen, onProviderSettingsToggle }: {
+                   providerSettingsOpen, onProviderSettingsToggle,
+                   onNewDiscussion,
+                   recentTopics = [] }: {
   modes: string[]; selected: string; passMap: PassMap;
   onSelect: (m: string) => void;
+  onNewDiscussion: () => void;
   customGoal: string; onCustomGoalChange: (v: string) => void;
   onCustomRun: () => void; running: boolean;
   discussionMode: DiscussionMode; onDiscussionModeChange: (m: DiscussionMode) => void;
@@ -1347,257 +1568,224 @@ function Sidebar({ modes, selected, passMap, onSelect,
   onProviderSettingsChange: (s: ProvidersConfig) => void;
   providerSettingsOpen: boolean;
   onProviderSettingsToggle: () => void;
+  recentTopics?: Topic[];
 }) {
-  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+  void onProviderSettingsChange;
+  void providerSettingsOpen;
+  const activeProviders = (["gpt", "claude", "gemini"] as const).filter(p => providerSettings[p].enabled);
+  const providerLabel = (p: "gpt" | "claude" | "gemini") =>
+    p === "gpt" ? "GPT" : p === "claude" ? "Claude" : "Gemini";
 
-  async function handleTestConnection(provider: "gpt" | "claude" | "gemini") {
-    setTestStatus(prev => ({ ...prev, [provider]: "테스트 중..." }));
-    const res = await window.api.testProviderConnection(provider);
-    setTestStatus(prev => ({
-      ...prev,
-      [provider]: res.ok ? `✓ ${res.latency}ms` : `✗ ${res.error?.slice(0, 40) ?? "실패"}`,
-    }));
-    setTimeout(() => setTestStatus(prev => { const n = { ...prev }; delete n[provider]; return n; }), 5000);
-  }
   return (
     <div className="sidebar">
-      <div className="sidebar-modes">
-        <div className="sidebar-title">Mock Mode</div>
-        {modes.map((m) => (
-          <div
-            key={m}
-            className={`mode-item ${m === selected ? "active" : ""}`}
-            onClick={() => onSelect(m)}
-          >
-            <span className={`mode-dot ${passMap[m] ?? ""}`} />
-            mock:{m}
-          </div>
+      <div className="sidebar-brand">
+        <div className="brand-mark">G</div>
+        <div>
+          <strong>GCPT</strong>
+          <span>AI 토론 워크스페이스</span>
+        </div>
+      </div>
+
+      <nav className="sidebar-nav" aria-label="주요 메뉴">
+        <button
+          className={`side-nav-item ${selected === "custom" ? "active" : ""}`}
+          onClick={onNewDiscussion}
+        >
+          새 토론
+        </button>
+        <button className="side-nav-item" type="button">
+          최근 토론
+        </button>
+        <button className="side-nav-item" type="button" onClick={onProviderSettingsToggle}>
+          설정
+        </button>
+      </nav>
+
+      <section className="sidebar-recent">
+        <div className="sidebar-section-head">
+          <span>최근 토론</span>
+          <small>{recentTopics.length}</small>
+        </div>
+        {recentTopics.length === 0 ? (
+          <div className="sidebar-empty">아직 저장된 토론이 없습니다</div>
+        ) : recentTopics.map((topic, idx) => (
+          <button key={`${topic.startRevId}-${idx}`} className="recent-topic" type="button">
+            <strong>{topic.goal}</strong>
+            <em>{topic.status === "decided" ? "완료" : topic.status === "active" ? "진행 중" : topic.status}</em>
+          </button>
         ))}
-      </div>
-      <div className="disc-mode-section">
-        <div className="sidebar-title">대화 방식</div>
-        <div className="disc-mode-btns">
-          <button
-            className={`disc-mode-btn ${interactionStyle === "debate" ? "active" : ""}`}
-            onClick={() => onInteractionStyleChange("debate")}
-            disabled={running}
-            title="논거 제시, 반박, 수렴 — 최적 결론을 도출하는 구조적 토론"
-          >
-            토론
-          </button>
-          <button
-            className={`disc-mode-btn ${interactionStyle === "conversation" ? "active" : ""}`}
-            onClick={() => onInteractionStyleChange("conversation")}
-            disabled={running}
-            title="자연스러운 대화 — 3턴 후 자동 종료, 수렴 평가 없음"
-          >
-            대화
-          </button>
+      </section>
+
+      <section className="sidebar-provider-summary">
+        <div className="sidebar-section-head">
+          <span>연결 상태</span>
+          <button type="button" onClick={onProviderSettingsToggle}>관리</button>
         </div>
-        {interactionStyle === "conversation" && (
-          <div className="until-consensus-warn">
-            대화 모드: 수렴 평가 없이 자연스럽게 대화합니다. 3턴 후 자동 종료됩니다.
-          </div>
-        )}
-      </div>
-      <div className="disc-mode-section">
-        <div className="sidebar-title">토론 모드</div>
-        <div className="disc-mode-btns">
-          {(["general", "development", "idea"] as const).map(m => (
-            <button
-              key={m}
-              className={`disc-mode-btn ${discussionMode === m ? "active" : ""}`}
-              onClick={() => onDiscussionModeChange(m)}
-              disabled={running || interactionStyle === "conversation"}
-              title={m === "general" ? "일상적인 주제, 단순 응답" : m === "development" ? "기술 스택·아키텍처 중심" : "창의적 제안·아이디어 발산"}
-            >
-              {DISC_MODE_LABELS[m]}
-            </button>
+        <div className="provider-pill-row">
+          {(["gpt", "claude", "gemini"] as const).map(p => (
+            <span key={p} className={`provider-pill ${providerSettings[p].enabled ? "connected" : ""}`}>
+              {providerLabel(p)}
+            </span>
           ))}
         </div>
-      </div>
-      <div className="disc-mode-section">
-        <div className="sidebar-title">
-          토론 깊이
-          {(discussionDepth === "deep" || discussionDepth === "until_consensus") && (
-            <span className="depth-cost-hint"> ⚠ 토큰 증가</span>
-          )}
-        </div>
-        <div className="disc-mode-btns">
-          {(["fast", "balanced", "deep"] as const).map(d => (
-            <button
-              key={d}
-              className={`disc-mode-btn ${discussionDepth === d ? "active" : ""}`}
-              onClick={() => onDiscussionDepthChange(d)}
-              disabled={running || interactionStyle === "conversation"}
-              title={
-                d === "fast"     ? "1라운드 · 빠른 결론" :
-                d === "balanced" ? "2라운드 · 기본 (현재)" :
-                                   "5라운드 · 심층 토론 · 토큰 증가"
-              }
-            >
-              {DEPTH_LABELS[d]}
-            </button>
-          ))}
-        </div>
-        <div className="disc-mode-btns" style={{ marginTop: 4 }}>
-          <button
-            className={`disc-mode-btn until-consensus-btn ${discussionDepth === "until_consensus" ? "active" : ""}`}
-            onClick={() => onDiscussionDepthChange("until_consensus")}
-            disabled={running || interactionStyle === "conversation"}
-            title="합의 도달까지 최대 20라운드 · 30분 안전 타임아웃 · 실험 모드"
-          >
-            {DEPTH_LABELS["until_consensus"]}
-          </button>
-        </div>
-        {discussionDepth === "until_consensus" && (
-          <div className="until-consensus-warn">
-            실험 모드: 합의 도달 시까지 자동 토론을 계속합니다. 최대 20라운드 / 30분 후 자동 중지. API 호출이 많아질 수 있습니다.
-          </div>
-        )}
-      </div>
-      <div className="disc-mode-section">
-        <div className="sidebar-title">수렴 방식</div>
-        <div className="disc-mode-btns">
-          {(["auto", "manual"] as const).map(c => (
-            <button
-              key={c}
-              className={`disc-mode-btn ${consensusMode === c ? "active" : ""}`}
-              onClick={() => onConsensusModeChange(c)}
-              disabled={running || interactionStyle === "conversation"}
-              title={
-                c === "auto"   ? "조건 충족 시 시스템이 자동으로 결론을 확정" :
-                                 "사용자가 [채택] 버튼을 눌러야 결론 확정"
-              }
-            >
-              {CONSENSUS_LABELS[c]}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="disc-mode-section">
-        <label className="safety-limit-toggle" title="OFF 시 라운드 한도 도달 후에도 토론을 계속합니다. 내부 절대 타임아웃(10~30분)은 항상 유지됩니다.">
+        <p>{activeProviders.length >= 2 ? `${activeProviders.length}개 모델로 토론할 수 있습니다` : "토론에는 최소 2개의 모델이 필요합니다"}</p>
+      </section>
+
+      <details className="advanced-settings">
+        <summary>고급 설정</summary>
+
+        <div className="custom-goal-section">
+          <div className="sidebar-title">직접 입력</div>
           <input
-            type="checkbox"
-            checked={safetyLimitEnabled}
-            onChange={e => onSafetyLimitEnabledChange(e.target.checked)}
+            className="custom-goal-input"
+            type="text"
+            placeholder="결정할 주제를 입력하세요"
+            value={customGoal}
+            onChange={e => onCustomGoalChange(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !running && onCustomRun()}
             disabled={running}
           />
-          <span>안전 한도 사용</span>
-          {!safetyLimitEnabled && <span className="depth-cost-hint"> ⚠ 라운드 무제한</span>}
-        </label>
-      </div>
-      <div className="custom-goal-section">
-        <div className="sidebar-title" style={{ padding: "8px 10px 6px" }}>직접 입력</div>
-        <input
-          className="custom-goal-input"
-          type="text"
-          placeholder="결정할 주제를 입력하세요"
-          value={customGoal}
-          onChange={e => onCustomGoalChange(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && !running && onCustomRun()}
-          disabled={running}
-        />
-        <button
-          className={`custom-goal-btn ${selected === "custom" ? "active" : ""}`}
-          onClick={onCustomRun}
-          disabled={running || !customGoal.trim()}
-        >
-          ▶ 토론 시작
-        </button>
-        {selected === "custom" && (
-          <div className="custom-goal-hint">마지막 실행: 커스텀 모드</div>
-        )}
-      </div>
+          <button
+            className={`custom-goal-btn ${selected === "custom" ? "active" : ""}`}
+            onClick={onCustomRun}
+            disabled={running || !customGoal.trim()}
+          >
+            토론 시작
+          </button>
+          {selected === "custom" && (
+            <div className="custom-goal-hint">마지막 실행: 직접 입력</div>
+          )}
+        </div>
 
-      {/* ── API 설정 ───────────────────────────────────────────── */}
-      <div className="provider-settings-section">
-        <button
-          className="provider-settings-toggle"
-          onClick={onProviderSettingsToggle}
-          title="AI provider ON/OFF 및 API 키 설정"
-        >
-          <span>⚙ API 설정</span>
-          <span className="provider-active-badges">
-            {(["gpt", "claude", "gemini"] as const).filter(p => providerSettings[p].enabled).map(p => (
-              <span key={p} className={`provider-badge provider-badge-${p}`}>
-                {p === "gpt" ? "GPT" : p === "claude" ? "Claude" : "Gemini"}
-              </span>
-            ))}
-            {(["gpt", "claude", "gemini"] as const).filter(p => providerSettings[p].enabled).length === 0 && (
-              <span className="provider-badge provider-badge-none">없음</span>
-            )}
-          </span>
-          <span className="provider-toggle-arrow">{providerSettingsOpen ? "▲" : "▼"}</span>
-        </button>
-
-        {providerSettingsOpen && (
-          <div className="provider-settings-panel">
-            {(["gpt", "claude", "gemini"] as const).map(p => {
-              const cfg = providerSettings[p];
-              const label = p === "gpt" ? "GPT" : p === "claude" ? "Claude" : "Gemini";
-              const models = p === "gpt"
-                ? ["gpt-5-mini", "gpt-5", "gpt-4o"]
-                : p === "claude"
-                ? ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
-                : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
-
-              return (
-                <div key={p} className={`provider-row ${cfg.enabled ? "provider-row-on" : "provider-row-off"}`}>
-                  <div className="provider-row-header">
-                    <button
-                      className={`provider-toggle-btn ${cfg.enabled ? "on" : "off"}`}
-                      onClick={() => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, enabled: !cfg.enabled } })}
-                      disabled={running}
-                      title={cfg.enabled ? `${label} 비활성화` : `${label} 활성화`}
-                    >
-                      {cfg.enabled ? "ON" : "OFF"}
-                    </button>
-                    <span className="provider-label">{label}</span>
-                    {cfg.apiKey && (
-                      <button
-                        className="provider-test-btn"
-                        onClick={() => handleTestConnection(p)}
-                        disabled={running}
-                        title="API 연결 테스트"
-                      >테스트</button>
-                    )}
-                    {testStatus[p] && (
-                      <span className={`provider-test-result ${testStatus[p].startsWith("✓") ? "ok" : "err"}`}>
-                        {testStatus[p]}
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    className="provider-apikey-input"
-                    type="password"
-                    placeholder={`${label} API Key`}
-                    value={cfg.apiKey}
-                    onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, apiKey: e.target.value } })}
-                    disabled={running}
-                  />
-                  <select
-                    className="provider-model-select"
-                    value={cfg.model}
-                    onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, model: e.target.value } })}
-                    disabled={running}
-                  >
-                    {models.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-              );
-            })}
-            <div className="provider-settings-hint">
-              {(() => {
-                const n = (["gpt", "claude", "gemini"] as const).filter(p => providerSettings[p].enabled).length;
-                if (n === 0) return "⚠ 활성화된 provider 없음 — 토론 불가";
-                if (n === 1) return "⚠ 토론에는 최소 2개의 provider가 필요합니다";
-                return `✓ ${n}개 활성화 — 토론 가능`;
-              })()}
-            </div>
+        <div className="disc-mode-section">
+          <div className="sidebar-title">대화 방식</div>
+          <div className="disc-mode-btns">
+            <button
+              className={`disc-mode-btn ${interactionStyle === "debate" ? "active" : ""}`}
+              onClick={() => onInteractionStyleChange("debate")}
+              disabled={running}
+              title="논거 제시, 반박, 수렴 - 최적 결론을 도출하는 구조적 토론"
+            >
+              토론
+            </button>
+            <button
+              className={`disc-mode-btn ${interactionStyle === "conversation" ? "active" : ""}`}
+              onClick={() => onInteractionStyleChange("conversation")}
+              disabled={running}
+              title="자연스러운 대화 - 3턴 후 자동 종료, 수렴 평가 없음"
+            >
+              대화
+            </button>
           </div>
-        )}
-      </div>
+          {interactionStyle === "conversation" && (
+            <div className="until-consensus-warn">
+              대화 모드: 수렴 평가 없이 자연스럽게 대화합니다. 3턴 후 자동 종료됩니다.
+            </div>
+          )}
+        </div>
+
+        <div className="disc-mode-section">
+          <div className="sidebar-title">토론 모드</div>
+          <div className="disc-mode-btns">
+            {(["general", "development", "idea"] as const).map(m => (
+              <button
+                key={m}
+                className={`disc-mode-btn ${discussionMode === m ? "active" : ""}`}
+                onClick={() => onDiscussionModeChange(m)}
+                disabled={running || interactionStyle === "conversation"}
+                title={m === "general" ? "일상적인 주제, 단순 응답" : m === "development" ? "기술 스택·아키텍처 중심" : "창의적 제안·아이디어 발산"}
+              >
+                {DISC_MODE_LABELS[m]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="disc-mode-section">
+          <div className="sidebar-title">
+            토론 깊이
+            {(discussionDepth === "deep" || discussionDepth === "until_consensus") && (
+              <span className="depth-cost-hint"> 토큰 증가</span>
+            )}
+          </div>
+          <div className="disc-mode-btns">
+            {(["fast", "balanced", "deep"] as const).map(d => (
+              <button
+                key={d}
+                className={`disc-mode-btn ${discussionDepth === d ? "active" : ""}`}
+                onClick={() => onDiscussionDepthChange(d)}
+                disabled={running || interactionStyle === "conversation"}
+                title={
+                  d === "fast"     ? "1라운드 · 빠른 결론" :
+                  d === "balanced" ? "2라운드 · 기본" :
+                                     "5라운드 · 심층 토론 · 토큰 증가"
+                }
+              >
+                {DEPTH_LABELS[d]}
+              </button>
+            ))}
+          </div>
+          <div className="disc-mode-btns" style={{ marginTop: 4 }}>
+            <button
+              className={`disc-mode-btn until-consensus-btn ${discussionDepth === "until_consensus" ? "active" : ""}`}
+              onClick={() => onDiscussionDepthChange("until_consensus")}
+              disabled={running || interactionStyle === "conversation"}
+              title="합의 도달까지 최대 20라운드 · 30분 안전 타임아웃 · 실험 모드"
+            >
+              {DEPTH_LABELS["until_consensus"]}
+            </button>
+          </div>
+          {discussionDepth === "until_consensus" && (
+            <div className="until-consensus-warn">
+              실험 모드: 합의 도달 시까지 자동 토론을 계속합니다. API 호출이 많아질 수 있습니다.
+            </div>
+          )}
+        </div>
+
+        <div className="disc-mode-section">
+          <div className="sidebar-title">수렴 방식</div>
+          <div className="disc-mode-btns">
+            {(["auto", "manual"] as const).map(c => (
+              <button
+                key={c}
+                className={`disc-mode-btn ${consensusMode === c ? "active" : ""}`}
+                onClick={() => onConsensusModeChange(c)}
+                disabled={running || interactionStyle === "conversation"}
+                title={c === "auto" ? "조건 충족 시 시스템이 자동으로 결론을 확정" : "사용자가 채택 버튼을 눌러야 결론 확정"}
+              >
+                {CONSENSUS_LABELS[c]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="disc-mode-section">
+          <label className="safety-limit-toggle" title="OFF 시 라운드 한도 도달 후에도 토론을 계속합니다. 내부 절대 타임아웃은 항상 유지됩니다.">
+            <input
+              type="checkbox"
+              checked={safetyLimitEnabled}
+              onChange={e => onSafetyLimitEnabledChange(e.target.checked)}
+              disabled={running}
+            />
+            <span>안전 한도 사용</span>
+            {!safetyLimitEnabled && <span className="depth-cost-hint"> 라운드 무제한</span>}
+          </label>
+        </div>
+
+        <div className="sidebar-modes">
+          <div className="sidebar-title">테스트 모드</div>
+          {modes.map((m) => (
+            <div
+              key={m}
+              className={`mode-item ${m === selected ? "active" : ""}`}
+              onClick={() => onSelect(m)}
+            >
+              <span className={`mode-dot ${passMap[m] ?? ""}`} />
+              mock:{m}
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
@@ -1620,7 +1808,7 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
   return (
     <div className="panel">
       <div className="panel-title">
-        Topic View
+        토론 주제
         {result && <span className="panel-hint">{result.topics.length}개 토론</span>}
         {hint && <span className="panel-hint">{hint}</span>}
       </div>
@@ -1803,7 +1991,13 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
     >
       <div className="topic-header">
         <span className="topic-goal">{topic.goal}</span>
-        <span className={`badge ${topic.status}`}>{topic.status}</span>
+        <span className={`badge ${topic.status}`}>
+          {topic.status === "decided" ? "완료" :
+           topic.status === "paused" ? "중지됨" :
+           topic.status === "closed" ? "종료" :
+           topic.status === "active" ? "진행 중" :
+           topic.status === "reopened" ? "재개" : topic.status}
+        </span>
         {topic.interactionStyle === "conversation" && (
           <span className="topic-mode-badge mode-conversation">💬 대화</span>
         )}
@@ -1943,7 +2137,7 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
           onClick={e => { e.stopPropagation(); onOpenInWorkspace(); }}
           title="이 결론을 기반으로 Workspace에서 파일 수정 작업을 시작합니다"
         >
-          Workspace에서 이어서 작업 →
+          워크스페이스에서 이어서 작업
         </button>
       )}
       {isUndecided && topic.status !== "decided" && (
@@ -1983,8 +2177,8 @@ function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRev
   revMap?: Map<number, Revision>;
 }) {
   const title = isFiltered
-    ? `Revision Timeline (${revisions.length} / ${totalCount} filtered)`
-    : `Revision Timeline (${totalCount})`;
+    ? `변경 기록 (${revisions.length} / ${totalCount}개 필터됨)`
+    : `변경 기록 (${totalCount})`;
 
   return (
     <div className="panel">
@@ -2089,6 +2283,7 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
   onStopDiscussion?: () => void;
 }) {
   const [interjectText,  setInterjectText]  = useState("");
+  const interjectRef = useRef<HTMLInputElement>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [deadlockDismissed, setDeadlockDismissed] = useState(false);
 
@@ -2186,12 +2381,14 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
     if (!msg || !onInterjection) return;
     onInterjection(msg);
     setInterjectText("");
+    // 한글 IME 조합 잔상 방지: 컨트롤드 state 초기화와 별개로 DOM value도 즉시 비운다
+    if (interjectRef.current) interjectRef.current.value = "";
   }
 
   return (
     <div className="panel discussion-panel">
       <div className="panel-title">
-        AI Discussion
+        AI 토론
         {msgs.length > 0 && <span className="panel-hint">{msgs.length}개 발언</span>}
         {liveStatus && <span className="disc-live-status">{liveStatus}</span>}
       </div>
@@ -2351,11 +2548,15 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
           )}
           <div className="disc-interject">
             <input
+              ref={interjectRef}
               className="disc-interject-input"
               placeholder={liveRunning ? "의견 입력 (예: 비용보다 유지보수 우선)" : "추가 의견 / 재토론 주제 입력..."}
               value={interjectText}
               onChange={e => setInterjectText(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && !liveRunning && sendInterjection()}
+              onKeyDown={e => {
+                if (e.nativeEvent.isComposing) return; // 한글 조합 중 Enter는 전송하지 않음
+                if (e.key === "Enter" && !liveRunning) sendInterjection();
+              }}
               disabled={liveRunning} // AI가 응답 중일 때는 입력 비활성화
             />
             <button
@@ -2429,7 +2630,9 @@ function MetricsBar({ result }: { result: RunResult | null }) {
   const max = lat.length ? Math.max(...lat) : 0;
 
   return (
-    <div className="metrics">
+    <details className="metrics">
+      <summary>고급 정보</summary>
+      <div className="metrics-panel">
       <MetricGroup label="GPT">
         <MetricItem name="calls"     value={m?.calls.gpt.total     ?? 0} />
         <MetricItem name="ok"        value={m?.calls.gpt.parseOk   ?? 0} accent="ok" />
@@ -2465,7 +2668,8 @@ function MetricsBar({ result }: { result: RunResult | null }) {
         <MetricItem name="decided"   value={m?.topics.decided   ?? 0} accent={(m?.topics.decided   ?? 0) > 0 ? "ok"  : undefined} />
         <MetricItem name="undecided" value={m?.topics.undecided ?? 0} accent={(m?.topics.undecided ?? 0) > 0 ? "err" : undefined} />
       </MetricGroup>
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -2503,6 +2707,7 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
 }) {
   const [input, setInput] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (bodyRef.current)
@@ -2514,6 +2719,8 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
     if (!t || busy) return;
     onSend(t);
     setInput("");
+    // 한글 IME 조합 잔상 방지: DOM value도 즉시 비운다
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   return (
@@ -2611,11 +2818,13 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
       </div>
       <div className="ws-chat-input-area">
         <textarea
+          ref={inputRef}
           className="ws-chat-input"
           placeholder={busy ? "응답 대기 중..." : "구현, 코드, 구조에 대해 질문하세요 (Enter 전송)"}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => {
+            if (e.nativeEvent.isComposing) return; // 한글 조합 중 Enter는 전송하지 않음
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -2883,7 +3092,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
       )}
       {/* Toolbar */}
       <div className="ws-toolbar">
-        <button onClick={openWorkspace} disabled={busy}>Open Workspace</button>
+        <button onClick={openWorkspace} disabled={busy}>워크스페이스 열기</button>
         <span className="ws-path">
           {workspacePath
             ? workspacePath
@@ -2946,7 +3155,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
               {proposed === null ? (
                 <div className="empty">
                   {original !== null
-                    ? "Mock Edit Proposal 버튼을 누르세요"
+                    ? "수정 제안 버튼을 누르세요"
                     : "파일을 선택하세요"}
                 </div>
               ) : noChange ? (
@@ -2973,9 +3182,9 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
             </div>
           </div>
 
-          {/* Edit Log */}
+          {/* 수정 기록 */}
           <div className="ws-log-panel">
-            <div className="ws-panel-title">Edit Log</div>
+            <div className="ws-panel-title">수정 기록</div>
             <div className="ws-panel-body">
               {wsLog.length === 0 ? (
                 <div className="empty">기록 없음</div>
@@ -3020,7 +3229,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
           onClick={proposeEdit}
           disabled={busy || original === null}
         >
-          Mock Edit Proposal
+          수정 제안
         </button>
         <button
           onClick={applyEdit}
