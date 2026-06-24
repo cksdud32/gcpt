@@ -1,4 +1,5 @@
 import type { QuestionEvolutionAnalysis, TopicDriftType } from "../../../src/types";
+import { DISPLAY } from "../../../src/display-terms";
 import "./QuestionEvolutionView.css";
 
 const DRIFT_BADGE_CLASS: Record<TopicDriftType, string> = {
@@ -15,7 +16,7 @@ const CONNECTOR_LABEL: Record<string, string> = {
 };
 
 const STAGE_LABEL: Record<string, string> = {
-  initial:  "초기",
+  initial:  "처음",
   middle:   "중간",
   emergent: "최종",
 };
@@ -37,7 +38,6 @@ export function QuestionEvolutionView({ qe }: Props) {
     transformationStage,
   } = qe;
 
-  // 의미 있는 actor 목록 (lockedActors + redirectActor 합산)
   const actorSet = new Set<string>([
     ...lockedActors.map(a => a.actor),
     ...(dominantRedirectActor ? [dominantRedirectActor] : []),
@@ -48,7 +48,7 @@ export function QuestionEvolutionView({ qe }: Props) {
 
       {/* 헤더 */}
       <div className="qev-header">
-        <span className="qev-title">질문 진화</span>
+        <span className="qev-title">{DISPLAY.section.question_evolution}</span>
         <span className={`qev-drift-badge ${DRIFT_BADGE_CLASS[driftType]}`}>
           {transformationStage}
         </span>
@@ -62,11 +62,13 @@ export function QuestionEvolutionView({ qe }: Props) {
         </div>
       </div>
 
-      {/* Evolution Path */}
+      {/* 섹션 설명 */}
+      <div className="qev-section-desc">{DISPLAY.desc.question_evolution}</div>
+
+      {/* 질문 변화 경로 */}
       <div className="qev-path">
         {evolutionPath.map((step, idx) => (
           <div key={step.stage}>
-            {/* 단계 간 커넥터 */}
             {idx > 0 && (
               <div className="qev-connector">
                 <span>↓</span>
@@ -134,7 +136,7 @@ export function QuestionEvolutionView({ qe }: Props) {
               <span className={`qev-actor-chip actor-${la.actor}`}>{la.actor}</span>
               <span className="qev-actor-label">질문 고수</span>
               <span className="qev-actor-val">{la.preserveRatio}%</span>
-              <span className="qev-lock-badge">Lock</span>
+              <span className="qev-lock-badge">고수</span>
             </div>
           ))}
           {dominantRedirectActor &&
@@ -143,8 +145,8 @@ export function QuestionEvolutionView({ qe }: Props) {
               <span className={`qev-actor-chip actor-${dominantRedirectActor}`}>
                 {dominantRedirectActor}
               </span>
-              <span className="qev-actor-label">논점 주도</span>
-              <span className="qev-redirect-badge">Redirect</span>
+              <span className="qev-actor-label">논점 전환 주도</span>
+              <span className="qev-redirect-badge">전환 주도</span>
             </div>
           )}
         </div>

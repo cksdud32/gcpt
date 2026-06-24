@@ -4,6 +4,7 @@ import type {
   StructuralConsensus,
   DiscussionAnalysis,
 } from "../../../src/types";
+import { DISPLAY } from "../../../src/display-terms";
 import "./StructuralAnalysisView.css";
 
 interface Props {
@@ -19,23 +20,25 @@ export function StructuralAnalysisView({ analysis }: Props) {
   return (
     <div className="sav-root">
 
-      {/* 1. 구조 수렴 맵 */}
+      {/* 1. AI들의 공통 사고 구조 */}
       {structuralConsensus && semanticLoop?.isPseudoDebate && (
-        <SavSection title="구조 수렴 맵" accent="structure">
+        <SavSection title={DISPLAY.section.structural_map} accent="structure">
+          <div className="sav-section-desc">{DISPLAY.desc.structural_map}</div>
           <StructuralMapView sc={structuralConsensus} />
         </SavSection>
       )}
 
-      {/* 2. 반복 프레임 감지 / Semantic Loop */}
+      {/* 2. 반복되는 생각 감지 */}
       {semanticLoop && (semanticLoop.isPseudoDebate || semanticLoop.repeatedFrames.length > 0) && (
-        <SavSection title="반복 프레임 감지" accent={semanticLoop.isPseudoDebate ? "loop" : undefined}>
+        <SavSection title={DISPLAY.section.repeated_frames} accent={semanticLoop.isPseudoDebate ? "loop" : undefined}>
+          <div className="sav-section-desc">{DISPLAY.desc.repeated_frames}</div>
           <SemanticLoopView loop={semanticLoop} />
         </SavSection>
       )}
 
-      {/* 3. Concept Gravity */}
+      {/* 3. 토론을 주도한 개념 */}
       {conceptGravity && conceptGravity.topConcepts.length > 0 && (
-        <SavSection title="Concept Gravity — 토론 지배 개념" accent="gravity">
+        <SavSection title={DISPLAY.section.concept_gravity} accent="gravity">
           <ConceptGravityView cg={conceptGravity} />
         </SavSection>
       )}
@@ -49,10 +52,10 @@ export function StructuralAnalysisView({ analysis }: Props) {
 function StructuralMapView({ sc }: { sc: StructuralConsensus }) {
   return (
     <div className="sav-structural-map">
-      {/* 표면 충돌 */}
+      {/* 표면 입장 */}
       {sc.surfaceConflicts.length > 0 && (
         <div className="sav-surface-conflicts">
-          {sc.surfaceConflicts.map((c, i) => (
+          {sc.surfaceConflicts.map(c => (
             <div key={c.actor} className="sav-surface-actor">
               <span className={`sav-actor-chip actor-${c.actor}`}>{c.actor}</span>
               <div className="sav-surface-position">
@@ -66,7 +69,7 @@ function StructuralMapView({ sc }: { sc: StructuralConsensus }) {
       )}
 
       {/* 구조 수렴 화살표 */}
-      <div className="sav-structure-arrow">↓ 공통 구조</div>
+      <div className="sav-structure-arrow">↓ AI들이 공통으로 공유한 생각</div>
 
       {/* 공유 구조 코어 */}
       <div className="sav-shared-structure">
@@ -109,13 +112,15 @@ function SemanticLoopView({ loop }: { loop: SemanticLoopAnalysis }) {
 
   return (
     <div className="sav-loop-root">
-      {/* Pseudo-debate 배지 + drift 게이지 */}
+      {/* 감지 배지 + 의미 이동률 */}
       <div className="sav-loop-header">
         <span className={`sav-pseudo-badge ${loop.isPseudoDebate ? "sav-pseudo-active" : "sav-pseudo-inactive"}`}>
-          {loop.isPseudoDebate ? "Semantic Loop 감지" : "부분 반복"}
+          {loop.isPseudoDebate
+            ? DISPLAY.badge.semantic_loop_detected
+            : DISPLAY.badge.partial_repeat}
         </span>
         <div className="sav-drift-row">
-          <span className="sav-drift-label">의미 이동률</span>
+          <span className="sav-drift-label">의미 변화율</span>
           <div className="sav-drift-track">
             <div className={`sav-drift-fill ${driftClass}`} style={{ width: `${driftPct}%` }} />
           </div>
@@ -123,22 +128,20 @@ function SemanticLoopView({ loop }: { loop: SemanticLoopAnalysis }) {
         </div>
       </div>
 
-      {/* collapseReason */}
       {loop.collapseReason && (
         <div className="sav-collapse-reason">{loop.collapseReason}</div>
       )}
 
-      {/* 루프 revision 범위 */}
       {loop.loopRevisionRange && (
         <div className="sav-loop-range">
-          Semantic Loop 범위: revision #{loop.loopRevisionRange.from} → #{loop.loopRevisionRange.to}
+          반복 구간: 발언 #{loop.loopRevisionRange.from} → #{loop.loopRevisionRange.to}
         </div>
       )}
 
       {/* 공유 핵심 개념 */}
       {loop.sharedCoreConcepts.length > 0 && (
         <div className="sav-shared-core">
-          <span className="sav-core-label">공유 핵심 개념</span>
+          <span className="sav-core-label">공통으로 쓰인 개념</span>
           <div className="sav-core-chips">
             {loop.sharedCoreConcepts.map(k => (
               <span key={k} className="sav-core-chip">{k}</span>
@@ -147,10 +150,10 @@ function SemanticLoopView({ loop }: { loop: SemanticLoopAnalysis }) {
         </div>
       )}
 
-      {/* 반복 프레임 top 4 */}
+      {/* 반복된 생각 패턴 */}
       {loop.repeatedFrames.length > 0 && (
         <div className="sav-frames">
-          <div className="sav-frames-label">반복된 의미 프레임</div>
+          <div className="sav-frames-label">반복된 생각 패턴</div>
           {loop.repeatedFrames.slice(0, 4).map(f => (
             <div key={f.concept} className="sav-frame-row">
               <span className="sav-frame-concept">{f.concept}</span>

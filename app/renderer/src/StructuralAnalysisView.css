@@ -13,6 +13,13 @@
   border-radius: 8px;
   overflow: hidden;
 }
+.sav-section-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
 .sav-section-structure { border-color: rgba(167, 139, 250, 0.3); }
 .sav-section-loop      { border-color: rgba(248, 113, 113, 0.3); }
 .sav-section-gravity   { border-color: rgba(56, 189, 248, 0.3);  }

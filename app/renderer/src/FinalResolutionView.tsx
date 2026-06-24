@@ -1,4 +1,5 @@
 import type { FinalResolution, ResolutionType } from "../../../src/types";
+import { DISPLAY } from "../../../src/display-terms";
 import "./FinalResolutionView.css";
 
 const TYPE_BADGE_CLASS: Record<ResolutionType, string> = {
@@ -9,10 +10,10 @@ const TYPE_BADGE_CLASS: Record<ResolutionType, string> = {
 };
 
 const TYPE_LABEL: Record<ResolutionType, string> = {
-  stable_answer:              "안정 수렴",
-  synthesized_resolution:     "합성 해결",
-  transformed_resolution:     "질문 진화 해결",
-  unresolved_dynamic_tension: "동적 긴장 유지",
+  stable_answer:              "처음 질문 그대로 합의",
+  synthesized_resolution:     "여러 의견이 하나로 합쳐짐",
+  transformed_resolution:     "질문 자체가 진화해 결론 도달",
+  unresolved_dynamic_tension: "끝까지 의견 차이가 남음",
 };
 
 interface Props {
@@ -40,7 +41,7 @@ export function FinalResolutionView({ fr }: Props) {
 
       {/* 헤더 */}
       <div className="frv-header">
-        <span className="frv-title">최종 진화 구조</span>
+        <span className="frv-title">{DISPLAY.section.final_resolution}</span>
         <span className={`frv-type-badge ${TYPE_BADGE_CLASS[resolutionType]}`}>
           {TYPE_LABEL[resolutionType]}
         </span>
@@ -49,6 +50,9 @@ export function FinalResolutionView({ fr }: Props) {
         </span>
       </div>
 
+      {/* 섹션 설명 */}
+      <div className="frv-section-desc">{DISPLAY.desc.final_resolution}</div>
+
       {/* Primary Conclusion */}
       <div className="frv-primary">{primaryConclusion}</div>
 
@@ -56,25 +60,26 @@ export function FinalResolutionView({ fr }: Props) {
       {(hasEmergent || hasStructural || hasTraj || hasTensions) && (
         <div className="frv-blocks">
 
-          {/* 1. Emergent Question */}
+          {/* 1. 토론 중 새롭게 떠오른 질문 */}
           {hasEmergent && (
             <div className="frv-block frv-block-emergent">
               <div className="frv-block-header">
                 <span className="frv-block-icon">❓</span>
-                <span className="frv-block-title">Emergent Question</span>
+                <span className="frv-block-title">{DISPLAY.block.emergent_question}</span>
               </div>
               <div className="frv-block-body">
+                <div className="frv-block-desc">{DISPLAY.desc.emergent_question}</div>
                 <div className="frv-emergent-q">{emergentQuestion}</div>
               </div>
             </div>
           )}
 
-          {/* 2. Structural Consensus */}
+          {/* 2. AI들이 공통으로 공유한 생각 */}
           {hasStructural && (
             <div className="frv-block frv-block-structural">
               <div className="frv-block-header">
                 <span className="frv-block-icon">🔗</span>
-                <span className="frv-block-title">공유 구조</span>
+                <span className="frv-block-title">{DISPLAY.block.shared_structure}</span>
               </div>
               <div className="frv-block-body">
                 <div className="frv-struct-chips">
@@ -86,12 +91,12 @@ export function FinalResolutionView({ fr }: Props) {
             </div>
           )}
 
-          {/* 3. Evolutionary Trajectory */}
+          {/* 3. 생각이 변해온 흐름 */}
           {hasTraj && (
             <div className="frv-block frv-block-traj">
               <div className="frv-block-header">
                 <span className="frv-block-icon">📈</span>
-                <span className="frv-block-title">논리 진화 궤적</span>
+                <span className="frv-block-title">{DISPLAY.block.evolution_trajectory}</span>
               </div>
               <div className="frv-block-body">
                 <div className="frv-traj">
@@ -122,14 +127,15 @@ export function FinalResolutionView({ fr }: Props) {
             </div>
           )}
 
-          {/* 4. Remaining Tensions */}
+          {/* 4. 끝까지 남은 의견 차이 */}
           {hasTensions && (
             <div className="frv-block frv-block-tension">
               <div className="frv-block-header">
                 <span className="frv-block-icon">⚡</span>
-                <span className="frv-block-title">미해결 긴장</span>
+                <span className="frv-block-title">{DISPLAY.block.unresolved_tensions}</span>
               </div>
               <div className="frv-block-body">
+                <div className="frv-block-desc">{DISPLAY.desc.unresolved_tensions}</div>
                 <div className="frv-tensions">
                   {unresolvedTensions.map((t, i) => (
                     <div key={i} className="frv-tension-row">

@@ -10,6 +10,14 @@
   border-radius: 10px;
 }
 
+/* ─── Section Description ────────────────────────────────────────── */
+.qev-section-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-top: -4px;
+}
+
 /* ─── Header ─────────────────────────────────────────────────────── */
 .qev-header {
   display: flex;

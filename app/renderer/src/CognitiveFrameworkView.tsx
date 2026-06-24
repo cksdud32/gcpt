@@ -5,6 +5,7 @@ import type {
   RelationType,
   ReasoningPatternType,
 } from "../../../src/types";
+import { DISPLAY } from "../../../src/display-terms";
 import "./CognitiveFrameworkView.css";
 
 const FRAMEWORK_TYPE_LABEL: Record<FrameworkType, string> = {
@@ -17,27 +18,27 @@ const FRAMEWORK_TYPE_LABEL: Record<FrameworkType, string> = {
 };
 
 const ROLE_LABEL: Record<PrincipleRole, string> = {
-  foundation: "기반",
-  driver:     "추진",
-  balancer:   "균형",
-  emergent:   "창발",
-  constraint: "제약",
+  foundation: DISPLAY.principle_role.foundation,
+  driver:     DISPLAY.principle_role.driver,
+  balancer:   DISPLAY.principle_role.balancer,
+  emergent:   DISPLAY.principle_role.emergent,
+  constraint: DISPLAY.principle_role.constraint,
 };
 
 const RELATION_LABEL: Record<RelationType, string> = {
-  requires:   "requires",
-  limits:     "limits",
-  stabilizes: "stabilizes",
-  amplifies:  "amplifies",
-  balances:   "balances",
+  requires:   "필요로 함",
+  limits:     "제약함",
+  stabilizes: "안정시킴",
+  amplifies:  "강화함",
+  balances:   "균형 잡음",
 };
 
 const PATTERN_LABEL: Record<ReasoningPatternType, string> = {
-  conflict_resolution:    "대립 해소",
-  system_balancing:       "시스템 균형",
-  incremental_refinement: "점진적 정교화",
-  dialectical_synthesis:  "변증법적 합성",
-  recursive_adaptation:   "반복 적응",
+  conflict_resolution:    DISPLAY.reasoning_pattern.conflict_resolution,
+  system_balancing:       DISPLAY.reasoning_pattern.system_balancing,
+  incremental_refinement: DISPLAY.reasoning_pattern.incremental_refinement,
+  dialectical_synthesis:  DISPLAY.reasoning_pattern.dialectical_synthesis,
+  recursive_adaptation:   DISPLAY.reasoning_pattern.recursive_adaptation,
 };
 
 interface Props {
@@ -63,22 +64,25 @@ export function CognitiveFrameworkView({ cf }: Props) {
 
       {/* 헤더 */}
       <div className="cfv-header">
-        <span className="cfv-title">생성된 사고 프레임</span>
+        <span className="cfv-title">{DISPLAY.section.cognitive_framework}</span>
         <span className="cfv-type-badge">{FRAMEWORK_TYPE_LABEL[frameworkType]}</span>
         <span className="cfv-framework-name">{frameworkName}</span>
       </div>
+
+      {/* 섹션 설명 */}
+      <div className="cfv-section-desc">{DISPLAY.desc.cognitive_framework}</div>
 
       {/* Generated Perspective — 가장 중요 */}
       <div className="cfv-perspective">{generatedPerspective}</div>
 
       <div className="cfv-blocks">
 
-        {/* 핵심 원리 */}
+        {/* 핵심 개념 */}
         {hasPrinciples && (
           <div className="cfv-block cfv-block-principles">
             <div className="cfv-block-header">
               <span className="cfv-block-icon">🧱</span>
-              <span className="cfv-block-title">핵심 원리</span>
+              <span className="cfv-block-title">{DISPLAY.block.core_principles}</span>
             </div>
             <div className="cfv-block-body">
               <div className="cfv-principles">
@@ -108,12 +112,12 @@ export function CognitiveFrameworkView({ cf }: Props) {
           </div>
         )}
 
-        {/* 개념 관계 */}
+        {/* 개념 간 연결 */}
         {hasRelations && (
           <div className="cfv-block cfv-block-relations">
             <div className="cfv-block-header">
               <span className="cfv-block-icon">🔗</span>
-              <span className="cfv-block-title">개념 관계</span>
+              <span className="cfv-block-title">{DISPLAY.block.structural_relations}</span>
             </div>
             <div className="cfv-block-body">
               <div className="cfv-relations">
@@ -136,11 +140,11 @@ export function CognitiveFrameworkView({ cf }: Props) {
           </div>
         )}
 
-        {/* Reasoning Pattern */}
+        {/* 토론이 진행된 방식 */}
         <div className="cfv-block cfv-block-pattern">
           <div className="cfv-block-header">
             <span className="cfv-block-icon">🧠</span>
-            <span className="cfv-block-title">Reasoning Pattern</span>
+            <span className="cfv-block-title">{DISPLAY.block.reasoning_pattern}</span>
           </div>
           <div className="cfv-block-body">
             <div className="cfv-pattern-row">

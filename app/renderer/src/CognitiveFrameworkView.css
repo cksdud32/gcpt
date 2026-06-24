@@ -43,6 +43,14 @@
   margin-left: auto;
 }
 
+/* ─── Section Description ────────────────────────────────────────── */
+.cfv-section-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-top: -4px;
+}
+
 /* ─── Generated Perspective ──────────────────────────────────────── */
 .cfv-perspective {
   font-size: 13px;

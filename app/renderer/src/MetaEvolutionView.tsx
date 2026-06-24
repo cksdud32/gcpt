@@ -88,7 +88,7 @@ export function MetaEvolutionView({ meta }: Props) {
                 )}
                 {stage.entropy !== undefined && (
                   <div className="mev-timeline-node-entropy">
-                    <span className="mev-entropy-label">Entropy</span>
+                    <span className="mev-entropy-label">논리 다양성</span>
                     <div className="mev-entropy-bar-track">
                       <div
                         className={`mev-entropy-bar-fill ${stage.entropy < 0.35 ? "mev-ent-low" : stage.entropy < 0.65 ? "mev-ent-mid" : "mev-ent-high"}`}

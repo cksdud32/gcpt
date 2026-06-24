@@ -57,6 +57,21 @@
   border-radius: 0 6px 6px 0;
 }
 
+/* ─── Section / Block Description ───────────────────────────────── */
+.frv-section-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-top: -4px;
+}
+
+.frv-block-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
 /* ─── 4 Blocks ───────────────────────────────────────────────────── */
 .frv-blocks {
   display: flex;
