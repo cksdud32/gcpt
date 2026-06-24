@@ -33,6 +33,10 @@ function defaultProviders(): ProvidersConfig {
   };
 }
 
+function sanitizeSecretText(value: unknown): string {
+  return String(value ?? "").replace(/sk-[A-Za-z0-9_-]+/g, "API_KEY");
+}
+
 function loadProviderSettings(): ProvidersConfig {
   try {
     const filePath = getProviderSettingsPath();
@@ -101,7 +105,11 @@ function createWindow() {
 
 app.whenReady().then(() => {
   currentProviders = loadProviderSettings();
-  console.log("[main] loaded provider settings:", JSON.stringify(currentProviders, (_k, v) => typeof v === "string" && v.length > 8 ? v.slice(0, 4) + "****" : v));
+  console.log("[main] loaded provider settings:", JSON.stringify({
+    gpt:    { enabled: currentProviders.gpt.enabled,    hasApiKey: !!currentProviders.gpt.apiKey,    model: currentProviders.gpt.model },
+    claude: { enabled: currentProviders.claude.enabled, hasApiKey: !!currentProviders.claude.apiKey, model: currentProviders.claude.model },
+    gemini: { enabled: currentProviders.gemini.enabled, hasApiKey: !!currentProviders.gemini.apiKey, model: currentProviders.gemini.model },
+  }));
   createWindow();
 });
 app.on("window-all-closed", () => {
@@ -122,7 +130,7 @@ ipcMain.handle("provider:saveSettings", (_event, settings: ProvidersConfig) => {
     persistProviderSettings(currentProviders);
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: sanitizeSecretText(e instanceof Error ? e.message : String(e)) };
   }
 });
 
@@ -152,12 +160,12 @@ ipcMain.handle("provider:testConnection", async (_event, provider: "gpt" | "clau
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 100)}` };
+        return { ok: false, error: sanitizeSecretText(`HTTP ${res.status}: ${body.slice(0, 100)}`) };
       }
     }
     return { ok: true, latency: Date.now() - t0 };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message.slice(0, 120) : String(e) };
+    return { ok: false, error: sanitizeSecretText(e instanceof Error ? e.message.slice(0, 120) : String(e)) };
   }
 });
 
@@ -375,7 +383,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
       safeSend("discussion:done", snapshot);
     })
     .catch(err => {
-      console.error("[main] conversation error:", err);
+      console.error("[main] conversation error:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
       safeSend("discussion:done", null);
     })
     .finally(() => {
@@ -411,7 +419,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
     safeSend("discussion:done", snapshot);
   }, consensusMode, snapshotProviders)
   .catch(err => {
-    console.error("[main] discussion error:", err);
+    console.error("[main] discussion error:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
     safeSend("discussion:done", null);
   })
   .finally(() => {
@@ -493,12 +501,12 @@ ipcMain.handle("workspace:chat", async (_event, payload: {
     const content = await claude.send(payload.messages, payload.linkedTopic);
     return { ok: true, content, provider: claude.name } as const;
   } catch (err) {
-    console.warn("[workspace:chat] Claude failed, falling back to mock:", err);
+    console.warn("[workspace:chat] Claude failed, falling back to mock:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
     try {
       const content = await mock.send(payload.messages, payload.linkedTopic);
       return { ok: true, content, provider: mock.name } as const;
     } catch (mockErr) {
-      const msg = mockErr instanceof Error ? mockErr.message : String(mockErr);
+      const msg = sanitizeSecretText(mockErr instanceof Error ? mockErr.message : String(mockErr));
       return { ok: false, error: msg } as const;
     }
   }
