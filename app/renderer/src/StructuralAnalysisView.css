@@ -380,3 +380,37 @@
   text-align: right;
   padding-top: 2px;
 }
+
+/* Follow the app theme inside AnalysisModal instead of staying dark. */
+.am-modal .sav-section,
+.am-modal .sav-surface-actor,
+.am-modal .sav-frame-row,
+.am-modal .sav-gravity-row {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.am-modal .sav-section-title {
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+.am-modal .sav-contributions,
+.am-modal .sav-drift-track,
+.am-modal .sav-gravity-bar-track {
+  border-color: var(--border);
+  background: var(--border);
+}
+.am-modal .sav-section-desc,
+.am-modal .sav-surface-position,
+.am-modal .sav-structural-note,
+.am-modal .sav-drift-label,
+.am-modal .sav-loop-range,
+.am-modal .sav-frames-label,
+.am-modal .sav-frame-range,
+.am-modal .sav-gravity-rank,
+.am-modal .sav-gravity-stat,
+.am-modal .sav-gravity-score {
+  color: var(--text-secondary);
+}
+.am-modal .sav-frame-concept {
+  color: var(--text);
+}

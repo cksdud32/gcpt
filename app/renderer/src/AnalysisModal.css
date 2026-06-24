@@ -1474,3 +1474,174 @@
   background: rgba(167, 139, 250, 0.12);
   color: #a78bfa;
 }
+
+/* ─── Theme bridge ─────────────────────────────────────────────────
+   This modal predated the app-wide light/dark tokens and used fixed
+   dark colors. Keep the existing information design, but let surfaces
+   and text follow the active app theme. */
+.theme-light .am-overlay,
+.theme-dark .am-overlay {
+  --am-backdrop: rgba(25, 31, 40, 0.42);
+  --am-panel: var(--surface);
+  --am-panel-soft: var(--surface-soft);
+  --am-panel-muted: color-mix(in srgb, var(--surface-soft) 70%, var(--surface));
+  --am-border: var(--border);
+  --am-border-strong: var(--border-soft);
+  --am-text: var(--text);
+  --am-text-secondary: var(--text-secondary);
+  --am-text-muted: var(--text-muted);
+  --am-shadow: var(--shadow);
+  --am-primary: var(--primary);
+  --am-primary-soft: var(--primary-soft);
+}
+
+.theme-dark .am-overlay {
+  --am-backdrop: rgba(0, 0, 0, 0.58);
+  --am-panel: var(--card-bg);
+  --am-panel-soft: var(--surface-soft);
+  --am-panel-muted: color-mix(in srgb, var(--surface-soft) 68%, #000);
+  --am-border: var(--border);
+  --am-border-strong: var(--border-soft);
+  --am-shadow: 0 20px 60px rgba(0, 0, 0, 0.62);
+}
+
+.am-overlay {
+  background: var(--am-backdrop);
+}
+
+.am-modal {
+  background: var(--am-panel);
+  border-color: var(--am-border);
+  box-shadow: var(--am-shadow);
+  color: var(--am-text);
+}
+
+.am-header,
+.am-section,
+.am-segment-tabs,
+.am-full-analysis-collapse,
+.ag-side-nodes,
+.ag-legend {
+  border-color: var(--am-border);
+}
+
+.am-header,
+.am-segment-tabs {
+  background: var(--am-panel);
+}
+
+.am-close {
+  color: var(--am-text-muted);
+}
+.am-close:hover {
+  color: var(--am-text);
+  background: var(--am-panel-soft);
+}
+
+.am-goal,
+.am-synthesis-text,
+.am-dominant-value,
+.am-stance-val,
+.am-fc-vs-text,
+.am-cluster-canonical,
+.am-cf-stat-val,
+.am-bs-final-text,
+.am-cf-text,
+.ag-meta-value,
+.ag-node-text,
+.am-ep-innov-desc,
+.am-segment-evolution-conclusion {
+  color: var(--am-text);
+}
+
+.am-summary,
+.am-text,
+.am-dominant-reason,
+.am-label,
+.am-section-title,
+.am-synthesis-basis,
+.am-summary-secondary,
+.am-synthesis-note-body,
+.am-absorbed-concept,
+.am-fc-conf,
+.am-fc-reason,
+.am-saturation-reason,
+.am-cf-frozen-at,
+.am-cf-entropy,
+.am-cf-sub-label,
+.am-cf-stat-label,
+.am-bs-summary,
+.am-bs-stat,
+.am-ep-stag-label,
+.am-ep-sub-label,
+.am-ep-momentum-event,
+.ag-meta-label,
+.ag-chain-title,
+.ag-rank-text,
+.ag-side-title,
+.am-segment-tab,
+.am-segment-interjection-text,
+.am-segment-evolution-interjection,
+.am-segment-evolution-meta,
+.am-collapse-toggle {
+  color: var(--am-text-secondary);
+}
+
+.am-driver-rank,
+.am-novelty-rationale,
+.am-novelty-bar-label,
+.am-arrow,
+.am-cluster-actors,
+.am-cf-bar-label,
+.am-cf-phase-label,
+.ag-rank-num,
+.am-ep-innov-rev {
+  color: var(--am-text-muted);
+}
+
+.am-driver-tag,
+.am-deadlock-actor,
+.am-fc-revid-chip,
+.am-quality-bar-track,
+.am-cf-stat-bar-track,
+.am-ep-stag-track,
+.am-ep-momentum-bar-track,
+.am-ep-innov-row,
+.am-cf-phase,
+.am-segment-evolution,
+.am-segment-evolution-node,
+.am-full-analysis-collapse,
+.ag-meta-item,
+.ag-node,
+.ag-rank-row,
+.am-collapse-toggle {
+  background: var(--am-panel-soft);
+  border-color: var(--am-border);
+}
+
+.am-cf-phase-final,
+.ag-node.ag-node-highlight,
+.ag-rank-row.ag-rank-top {
+  background: color-mix(in srgb, var(--success-bg) 52%, var(--am-panel));
+}
+
+.am-conflict-row,
+.am-absorbed-row,
+.am-cluster-row,
+.am-bs-final-value {
+  border-color: var(--am-border);
+}
+
+.am-collapse-toggle:hover {
+  color: var(--am-text);
+  background: var(--am-panel-muted);
+}
+
+.am-segment-tab:hover {
+  color: var(--am-text);
+}
+
+.am-segment-tab-active {
+  color: var(--info);
+  border-bottom-color: var(--info);
+}

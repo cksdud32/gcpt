@@ -261,3 +261,34 @@
   border: 1px solid rgba(99,102,241,0.12);
   border-radius: 5px;
 }
+
+/* Follow the app theme inside AnalysisModal instead of staying dark. */
+.am-modal .cfv-root {
+  background: color-mix(in srgb, var(--primary-soft) 36%, var(--surface));
+  border-color: var(--primary-border);
+}
+.am-modal .cfv-block,
+.am-modal .cfv-principle-row {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.am-modal .cfv-block-header {
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+.am-modal .cfv-framework-name,
+.am-modal .cfv-perspective,
+.am-modal .cfv-principle-concept,
+.am-modal .cfv-rel-from,
+.am-modal .cfv-rel-to {
+  color: var(--text);
+}
+.am-modal .cfv-section-desc,
+.am-modal .cfv-pattern-desc,
+.am-modal .cfv-worldview,
+.am-modal .cfv-rel-conf {
+  color: var(--text-secondary);
+}
+.am-modal .cfv-principle-influence {
+  background: var(--border);
+}

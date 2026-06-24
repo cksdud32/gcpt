@@ -271,3 +271,37 @@
   line-height: 1.4;
   font-style: italic;
 }
+
+/* Follow the app theme inside AnalysisModal instead of staying dark. */
+.am-modal .frv-root {
+  background: color-mix(in srgb, var(--primary-soft) 28%, var(--surface));
+  border-color: var(--primary-border);
+}
+.am-modal .frv-block,
+.am-modal .frv-tension-side {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.am-modal .frv-block-header {
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+.am-modal .frv-primary,
+.am-modal .frv-traj-axis,
+.am-modal .frv-tension-side {
+  color: var(--text);
+}
+.am-modal .frv-conf,
+.am-modal .frv-conf-val,
+.am-modal .frv-section-desc,
+.am-modal .frv-block-desc,
+.am-modal .frv-traj-dominant,
+.am-modal .frv-tension-vs,
+.am-modal .frv-tension-why {
+  color: var(--text-secondary);
+}
+.am-modal .frv-traj-num {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}

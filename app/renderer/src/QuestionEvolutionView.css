@@ -264,3 +264,28 @@
   border: 1px solid rgba(167,139,250,0.2);
   border-radius: 6px;
 }
+
+/* Follow the app theme inside AnalysisModal instead of staying dark. */
+.am-modal .qev-root {
+  background: color-mix(in srgb, var(--primary-soft) 24%, var(--surface));
+  border-color: var(--primary-border);
+}
+.am-modal .qev-actor-pill {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.am-modal .qev-section-desc,
+.am-modal .qev-stat,
+.am-modal .qev-stat-val,
+.am-modal .qev-step-label,
+.am-modal .qev-concept-label,
+.am-modal .qev-actor-label,
+.am-modal .qev-actor-val {
+  color: var(--text-secondary);
+}
+.am-modal .qev-step-question,
+.am-modal .qev-step-question.q-initial,
+.am-modal .qev-step-question.q-middle,
+.am-modal .qev-step-question.q-emergent {
+  color: var(--text);
+}

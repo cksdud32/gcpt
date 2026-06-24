@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef, Component } from "react";
-import type { ReactNode, ErrorInfo } from "react";
+import { useState, useMemo, useEffect, useRef, Component, Fragment } from "react";
+import type { ReactNode, ErrorInfo, PointerEvent as ReactPointerEvent } from "react";
 import type { RunResult } from "../../../src/test-modes";
 import type { Author, Revision, Topic, Proposal, DiscussionDepth, ConsensusMode, DiscussionAnalysis, InteractionStyle } from "../../../src/types";
 import { DEPTH_LABELS, CONSENSUS_LABELS } from "../../../src/types";
@@ -442,6 +442,134 @@ class ErrorBoundary extends Component<{ label: string; children: ReactNode }, EB
     }
     return this.props.children;
   }
+}
+
+// ─── Resizable Panels ─────────────────────────────────────────────
+
+type ResizablePane = {
+  id: string;
+  minWidth: number;
+  initialFlex: number;
+  children: ReactNode;
+};
+
+function ResizablePanels({ panes }: { panes: ResizablePane[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const paneRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [widths, setWidths] = useState<number[] | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || widths) return;
+
+    const styles = window.getComputedStyle(container);
+    const horizontalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+    const available = container.clientWidth - horizontalPadding - (panes.length - 1) * 18;
+    if (available <= 0) return;
+
+    setWidths(panes.map(p => Math.max(p.minWidth, Math.round(available * p.initialFlex))));
+  }, [panes, widths]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !widths) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      const nextContainerWidth = container.clientWidth;
+      const totalWidth = widths.reduce((sum, width) => sum + width, 0);
+      const handleWidth = (panes.length - 1) * 18;
+      const styles = window.getComputedStyle(container);
+      const horizontalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+      const available = nextContainerWidth - horizontalPadding - handleWidth;
+      if (available <= 0 || totalWidth <= 0) return;
+
+      const minTotal = panes.reduce((sum, pane) => sum + pane.minWidth, 0);
+      if (available < minTotal) return;
+
+      setWidths(prev => {
+        if (!prev) return prev;
+        const prevTotal = prev.reduce((sum, width) => sum + width, 0);
+        if (prevTotal <= 0 || Math.abs(prevTotal - available) < 2) return prev;
+
+        const scaled = prev.map((width, idx) => Math.max(panes[idx].minWidth, Math.round(width * available / prevTotal)));
+        const diff = available - scaled.reduce((sum, width) => sum + width, 0);
+        scaled[scaled.length - 1] += diff;
+        return scaled;
+      });
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [panes, widths]);
+
+  function startResize(handleIdx: number, e: ReactPointerEvent<HTMLDivElement>) {
+    if (window.matchMedia("(max-width: 900px)").matches) return;
+
+    const leftEl = paneRefs.current[handleIdx];
+    const rightEl = paneRefs.current[handleIdx + 1];
+    if (!leftEl || !rightEl) return;
+
+    e.preventDefault();
+    const startX = e.clientX;
+    const leftStart = leftEl.getBoundingClientRect().width;
+    const rightStart = rightEl.getBoundingClientRect().width;
+    const pairTotal = leftStart + rightStart;
+    const leftMin = panes[handleIdx].minWidth;
+    const rightMin = panes[handleIdx + 1].minWidth;
+
+    function onPointerMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      const nextLeft = Math.min(Math.max(leftStart + dx, leftMin), pairTotal - rightMin);
+      const nextRight = pairTotal - nextLeft;
+
+      setWidths(prev => {
+        const base = prev ?? paneRefs.current.map(el => el?.getBoundingClientRect().width ?? 0);
+        const next = [...base];
+        next[handleIdx] = nextLeft;
+        next[handleIdx + 1] = nextRight;
+        return next;
+      });
+    }
+
+    function finishResize() {
+      document.body.classList.remove("is-resizing-panels");
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+      window.removeEventListener("blur", finishResize);
+    }
+
+    document.body.classList.add("is-resizing-panels");
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", finishResize, { once: true });
+    window.addEventListener("pointercancel", finishResize, { once: true });
+    window.addEventListener("blur", finishResize, { once: true });
+  }
+
+  return (
+    <div className="panels resizable-panels" ref={containerRef}>
+      {panes.map((pane, idx) => (
+        <Fragment key={pane.id}>
+          <div
+            className="resizable-pane"
+            ref={el => { paneRefs.current[idx] = el; }}
+            style={widths ? { flexBasis: widths[idx], minWidth: pane.minWidth } : { minWidth: pane.minWidth }}
+          >
+            {pane.children}
+          </div>
+          {idx < panes.length - 1 && (
+            <div
+              className="panel-resize-handle"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={`${pane.id} 패널 크기 조절`}
+              onPointerDown={e => startResize(idx, e)}
+            />
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────
@@ -1178,9 +1306,6 @@ export default function App() {
               passMap={passMap}
               onSelect={setSelected}
               onNewDiscussion={goHome}
-              customGoal={customGoal}
-              onCustomGoalChange={setCustomGoal}
-              onCustomRun={runCustom}
               running={running || aiProcessing}
               discussionMode={discussionMode}
               onDiscussionModeChange={setDiscussionMode}
@@ -1209,44 +1334,67 @@ export default function App() {
                 running={running || aiProcessing}
               />
             ) : (
-            <div className="panels">
-              <ErrorBoundary label="Topic Panel">
-                <TopicPanel
-                  result={displayResult}
-                  selectedTopicIdx={selectedTopicIdx}
-                  onTopicClick={handleTopicClick}
-                  onOpenInWorkspace={handleOpenInWorkspace}
-                  onDeleteTopic={!running && !aiProcessing ? handleDeleteTopic : undefined}
-                  executionRunning={running || aiProcessing}
-                  onShowAnalysis={(topic, analysis) => setAnalysisModal({ topic, analysis })}
-                />
-              </ErrorBoundary>
-              <ErrorBoundary label="Discussion Panel">
-                <DiscussionPanel
-                  result={displayResult}
-                  selectedTopicIdx={selectedTopicIdx}
-                  liveStatus={enhancedLiveStatus}
-                  liveRunning={aiProcessing}
-                  isLiveSession={liveSessionActive}
-                  onInterjection={handleInterjection}
-                  isManualMode={consensusMode === "manual" || displayResult?.topics[displayResult.topics.length - 1]?.status === "paused"}
-                  onAcceptConsensus={handleAcceptConsensus}
-                  onSelectProposal={handleSelectProposal}
-                  onStopDiscussion={aiProcessing ? handleStopDiscussion : undefined}
-                />
-              </ErrorBoundary>
-              <ErrorBoundary label="Timeline Panel">
-                <TimelinePanel
-                  revisions={aiProcessing ? (liveResult?.history ?? []) : displayedRevisions}
-                  totalCount={displayResult?.revisionCount ?? 0}
-                  isFiltered={!aiProcessing && selectedTopicIdx !== null}
-                  selectedRevId={selectedRevId}
-                  onRevClick={handleRevClick}
-                  wsLog={wsLog}
-                  revMap={revMap}
-                />
-              </ErrorBoundary>
-            </div>
+            <ResizablePanels
+              panes={[
+                {
+                  id: "토론 주제",
+                  minWidth: 180,
+                  initialFlex: 0.28,
+                  children: (
+                    <ErrorBoundary label="Topic Panel">
+                      <TopicPanel
+                        result={displayResult}
+                        selectedTopicIdx={selectedTopicIdx}
+                        onTopicClick={handleTopicClick}
+                        onOpenInWorkspace={handleOpenInWorkspace}
+                        onDeleteTopic={!running && !aiProcessing ? handleDeleteTopic : undefined}
+                        executionRunning={running || aiProcessing}
+                        onShowAnalysis={(topic, analysis) => setAnalysisModal({ topic, analysis })}
+                      />
+                    </ErrorBoundary>
+                  ),
+                },
+                {
+                  id: "AI 토론",
+                  minWidth: 260,
+                  initialFlex: 0.44,
+                  children: (
+                    <ErrorBoundary label="Discussion Panel">
+                      <DiscussionPanel
+                        result={displayResult}
+                        selectedTopicIdx={selectedTopicIdx}
+                        liveStatus={enhancedLiveStatus}
+                        liveRunning={aiProcessing}
+                        isLiveSession={liveSessionActive}
+                        onInterjection={handleInterjection}
+                        isManualMode={consensusMode === "manual" || displayResult?.topics[displayResult.topics.length - 1]?.status === "paused"}
+                        onAcceptConsensus={handleAcceptConsensus}
+                        onSelectProposal={handleSelectProposal}
+                        onStopDiscussion={aiProcessing ? handleStopDiscussion : undefined}
+                      />
+                    </ErrorBoundary>
+                  ),
+                },
+                {
+                  id: "변경 기록",
+                  minWidth: 180,
+                  initialFlex: 0.28,
+                  children: (
+                    <ErrorBoundary label="Timeline Panel">
+                      <TimelinePanel
+                        revisions={aiProcessing ? (liveResult?.history ?? []) : displayedRevisions}
+                        totalCount={displayResult?.revisionCount ?? 0}
+                        isFiltered={!aiProcessing && selectedTopicIdx !== null}
+                        selectedRevId={selectedRevId}
+                        onRevClick={handleRevClick}
+                        wsLog={wsLog}
+                        revMap={revMap}
+                      />
+                    </ErrorBoundary>
+                  ),
+                },
+              ]}
+            />
             )}
           </div>
           <MetricsBar result={displayResult} />
@@ -1544,7 +1692,7 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
 // ─── Sidebar ─────────────────────────────────────────────────────
 
 function Sidebar({ modes, selected, passMap, onSelect,
-                   customGoal, onCustomGoalChange, onCustomRun, running,
+                   running,
                    discussionMode, onDiscussionModeChange,
                    discussionDepth, onDiscussionDepthChange,
                    consensusMode, onConsensusModeChange,
@@ -1557,8 +1705,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
   modes: string[]; selected: string; passMap: PassMap;
   onSelect: (m: string) => void;
   onNewDiscussion: () => void;
-  customGoal: string; onCustomGoalChange: (v: string) => void;
-  onCustomRun: () => void; running: boolean;
+  running: boolean;
   discussionMode: DiscussionMode; onDiscussionModeChange: (m: DiscussionMode) => void;
   discussionDepth: DiscussionDepth; onDiscussionDepthChange: (d: DiscussionDepth) => void;
   consensusMode: ConsensusMode; onConsensusModeChange: (c: ConsensusMode) => void;
@@ -1631,31 +1778,8 @@ function Sidebar({ modes, selected, passMap, onSelect,
         <p>{activeProviders.length >= 2 ? `${activeProviders.length}개 모델로 토론할 수 있습니다` : "토론에는 최소 2개의 모델이 필요합니다"}</p>
       </section>
 
-      <details className="advanced-settings">
-        <summary>고급 설정</summary>
-
-        <div className="custom-goal-section">
-          <div className="sidebar-title">직접 입력</div>
-          <input
-            className="custom-goal-input"
-            type="text"
-            placeholder="결정할 주제를 입력하세요"
-            value={customGoal}
-            onChange={e => onCustomGoalChange(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && !running && onCustomRun()}
-            disabled={running}
-          />
-          <button
-            className={`custom-goal-btn ${selected === "custom" ? "active" : ""}`}
-            onClick={onCustomRun}
-            disabled={running || !customGoal.trim()}
-          >
-            토론 시작
-          </button>
-          {selected === "custom" && (
-            <div className="custom-goal-hint">마지막 실행: 직접 입력</div>
-          )}
-        </div>
+      <details className="discussion-settings">
+        <summary>토론 설정</summary>
 
         <div className="disc-mode-section">
           <div className="sidebar-title">대화 방식</div>

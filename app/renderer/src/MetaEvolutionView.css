@@ -334,3 +334,33 @@
   color: #cbd5e1;
   line-height: 1.5;
 }
+
+/* Follow the app theme inside AnalysisModal instead of staying dark. */
+.am-modal .mev-section,
+.am-modal .mev-timeline-node,
+.am-modal .mev-concept-transition,
+.am-modal .mev-path-node {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.am-modal .mev-section-title {
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+.am-modal .mev-entropy-bar-track {
+  background: var(--border);
+}
+.am-modal .mev-meta-summary,
+.am-modal .mev-section-title,
+.am-modal .mev-timeline-node-type,
+.am-modal .mev-entropy-label,
+.am-modal .mev-entropy-val,
+.am-modal .mev-interjection-text,
+.am-modal .mev-interjection-summary {
+  color: var(--text-secondary);
+}
+.am-modal .mev-meta-conclusion-text,
+.am-modal .mev-timeline-node-conclusion,
+.am-modal .mev-path-text {
+  color: var(--text);
+}
