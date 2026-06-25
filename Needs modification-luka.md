@@ -2,6 +2,8 @@
 
 작성일: 2026-06-25
 
+최근 UI 수정 반영일: 2026-06-25
+
 ## 요약
 
 현재 GCPT에서 가장 큰 혼동 지점은 실시간 모드와 데모/목업 실행 경계가 사용자에게 충분히 명확하지 않다는 점입니다. 특히 live mode가 꺼져 있거나 API 키가 빠진 provider가 있을 때 `Option-A`, `Option-B`, `Alt-X`, `Alt-Y` 같은 테스트용 값이 실제 AI 토론 결과처럼 보일 수 있습니다.
@@ -13,6 +15,34 @@
 - `npm run build` 통과
 - `npm run app:build` 통과
 - `npm test` 통과
+
+## 이번에 반영한 UI 수정
+
+범위:
+
+- core discussion engine 변경 없음
+- provider/API 로직 변경 없음
+- 저장 포맷 변경 없음
+- UI/UX 표시 로직만 보강
+
+반영 내용:
+
+- 데모/목업 결과 판정에서 `accumulated` 결과를 무조건 데모로 취급하던 오탐 가능성을 줄였습니다.
+- 이제 데모 판정은 명시적인 mock/custom mode 또는 테스트용 placeholder 값 감지를 기준으로 합니다.
+- `Option-A`, `Option-B`, `Option-C`, `Alt-X`, `Alt-Y`, `Alt-Z`가 감지되면 데모/테스트용 선택지 경고가 유지됩니다.
+- `DiscussionPanel`의 memo dependency에 `isLiveSession`을 추가해 live/mock 상태 전환 표시가 stale하게 남을 가능성을 줄였습니다.
+
+변경 파일:
+
+- `app/renderer/src/App.tsx`
+- `Needs modification-luka.md`
+
+남은 항목:
+
+- live 실행에서 API 키 없는 provider가 mock worker로 섞일 수 있는 문제는 아직 engine/provider 쪽 수정이 필요합니다.
+- workspace chat/plan fallback 표시 개선은 아직 별도 작업으로 남아 있습니다.
+- Claude parse fail raw logging 축소도 아직 별도 작업으로 남아 있습니다.
+- 한국어 open-ended prompt 분류 개선은 아직 별도 설계가 필요합니다.
 
 ## 1. API 키가 없어도 live 실행이 mock worker로 진행될 수 있음
 

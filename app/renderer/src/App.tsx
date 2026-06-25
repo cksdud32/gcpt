@@ -585,6 +585,11 @@ type DemoResultMeta = {
   hasPlaceholder: boolean;
 };
 
+function isKnownDemoMode(mode: string | undefined): boolean {
+  if (!mode) return false;
+  return mode === "custom" || MODES.includes(mode) || mode.startsWith("mock:");
+}
+
 function resultHasDemoPlaceholders(result: RunResult | null): boolean {
   if (!result) return false;
   return result.history.some(rev => {
@@ -600,9 +605,9 @@ function resultHasDemoPlaceholders(result: RunResult | null): boolean {
 
 function getDemoResultMeta(result: RunResult | null): DemoResultMeta {
   const hasPlaceholder = resultHasDemoPlaceholders(result);
-  const isNonLiveResult = !!result && result.mode !== "live";
+  const hasDemoMode = isKnownDemoMode(result?.mode);
   return {
-    isDemo: isNonLiveResult || hasPlaceholder,
+    isDemo: hasDemoMode || hasPlaceholder,
     hasPlaceholder,
   };
 }
@@ -2680,7 +2685,7 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
     return result.history.filter(
       r => r.id >= topic.startRevId && r.id < nextStart && DISC_TYPES.has(r.patch.payload.type),
     );
-  }, [result, selectedTopicIdx, liveRunning]);
+  }, [result, selectedTopicIdx, liveRunning, isLiveSession]);
 
   const items = useMemo(() => buildDiscussionItems(msgs), [msgs]);
 
