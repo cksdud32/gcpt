@@ -522,7 +522,7 @@ ipcMain.handle("workspace:chat", async (_event, payload: {
   // No API key → immediate mock
   if (!apiKey) {
     const content = await mock.send(payload.messages, payload.linkedTopic);
-    return { ok: true, content, provider: mock.name } as const;
+    return { ok: true, content, provider: mock.name, fallbackReason: "missing_api_key" } as const;
   }
 
   // Try Claude, fallback to mock on any error
@@ -534,7 +534,7 @@ ipcMain.handle("workspace:chat", async (_event, payload: {
     console.warn("[workspace:chat] Claude failed, falling back to mock:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
     try {
       const content = await mock.send(payload.messages, payload.linkedTopic);
-      return { ok: true, content, provider: mock.name } as const;
+      return { ok: true, content, provider: mock.name, fallbackReason: "provider_error" } as const;
     } catch (mockErr) {
       const msg = sanitizeSecretText(mockErr instanceof Error ? mockErr.message : String(mockErr));
       return { ok: false, error: msg } as const;
@@ -552,16 +552,16 @@ ipcMain.handle("workspace:generate-plan", async (_event, payload: {
 
   if (!apiKey) {
     const plan = await mock.generatePlan(payload.linkedTopic);
-    return { ok: true, plan } as const;
+    return { ok: true, plan, provider: mock.name, fallbackReason: "missing_api_key" } as const;
   }
 
   const claude = makeClaudeProvider(apiKey);
   try {
     const plan = await claude.generatePlan(payload.linkedTopic);
-    return { ok: true, plan } as const;
+    return { ok: true, plan, provider: claude.name } as const;
   } catch (err) {
-    console.warn("[workspace:generate-plan] Claude failed, falling back to mock:", err);
+    console.warn("[workspace:generate-plan] Claude failed, falling back to mock:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
     const plan = await mock.generatePlan(payload.linkedTopic);
-    return { ok: true, plan } as const;
+    return { ok: true, plan, provider: mock.name, fallbackReason: "provider_error" } as const;
   }
 });

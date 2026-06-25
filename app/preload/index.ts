@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld("api", {
       mode?:         string;
     };
   }): Promise<
-    | { ok: true;  content: string; provider: "claude" | "mock" }
+    | { ok: true;  content: string; provider: "claude" | "mock"; fallbackReason?: "missing_api_key" | "provider_error" }
     | { ok: false; error: string }
   > => ipcRenderer.invoke("workspace:chat", payload),
 
@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld("api", {
       mode?:         string;
     };
   }): Promise<
-    | { ok: true;  plan: WorkspacePlan }
+    | { ok: true;  plan: WorkspacePlan; provider: "claude" | "mock"; fallbackReason?: "missing_api_key" | "provider_error" }
     | { ok: false; error: string }
   > => ipcRenderer.invoke("workspace:generate-plan", payload),
 

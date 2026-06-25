@@ -10,6 +10,8 @@ import {
 } from "./segment-context.js";
 
 const VALID_STANCE_ACTIONS = new Set<string>(["defend", "refine", "concede", "propose"]);
+const PARSE_FAIL_PREVIEW_CHARS = 200;
+const LOG_RAW_PARSE_FAILURES = process.env.GCPT_DEBUG_RAW_MODEL_OUTPUT === "1";
 
 interface ProposalResponse {
   value: string;
@@ -66,6 +68,12 @@ function parseResponse(raw: string): ProposalResponse | null {
   }
 }
 
+function sanitizeLogPreview(raw: string, limit = PARSE_FAIL_PREVIEW_CHARS): string {
+  return raw
+    .replace(/sk-[A-Za-z0-9_-]+/g, "API_KEY")
+    .replace(/[\r\n\t]+/g, " ")
+    .slice(0, limit);
+}
 
 const SYSTEM = `You are a technical advisor in a multi-AI decision system.
 Your role is to provide thoughtful counter-proposals to existing suggestions.
@@ -204,13 +212,17 @@ export class RealClaudeWorker {
       const parsed = parseResponse(block.text);
 
       if (!parsed) {
-        // 전체 원문 출력 (120자 제한 제거) — extractJson 결과도 함께
-        const extracted = extractJson(block.text);
-        console.error(
-          `[Claude] parseFail (goalRevId=${capturedGoalRevId})\n` +
-          `  raw(${block.text.length}): ${block.text}\n` +
-          `  extracted: ${extracted}`,
-        );
+        const preview = sanitizeLogPreview(block.text);
+        const suffix = block.text.length > PARSE_FAIL_PREVIEW_CHARS ? "…" : "";
+        console.error(`[Claude] parseFail (goalRevId=${capturedGoalRevId}, rawLength=${block.text.length}): ${preview}${suffix}`);
+        if (LOG_RAW_PARSE_FAILURES) {
+          const extracted = extractJson(block.text);
+          console.debug(
+            `[Claude] debug parseFail raw/extracted (goalRevId=${capturedGoalRevId})\n` +
+            `  raw: ${sanitizeLogPreview(block.text, 2000)}\n` +
+            `  extracted: ${sanitizeLogPreview(extracted, 2000)}`,
+          );
+        }
         if (this.metrics) this.metrics.calls.claude.parseFail++;
         this.spokenAt.set(capturedGoalRevId, count); // rollback
         return;

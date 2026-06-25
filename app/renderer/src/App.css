@@ -1709,6 +1709,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   align-items: center;
   justify-content: space-between;
   margin-bottom: 5px;
+  gap: 8px;
 }
 .ws-plan-title {
   font-size: 10px;
@@ -1716,6 +1717,34 @@ button:disabled { opacity: 0.4; cursor: default; }
   color: var(--success);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-plan-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.ws-plan-provider {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.ws-plan-provider-claude { color: var(--success); background: var(--card-bg); }
+.ws-plan-provider-mock   { color: var(--warn); background: var(--warn-bg); }
+.ws-plan-warning {
+  margin-bottom: 5px;
+  padding: 5px 7px;
+  border-left: 2px solid var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 10px;
+  line-height: 1.45;
 }
 .ws-plan-meta {
   font-size: 10px;

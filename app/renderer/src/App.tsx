@@ -85,6 +85,7 @@ const WS_EDITOR_INITIAL: WsEditorState = {
 type FileTreeNode =
   | { type: "folder"; name: string; path: string; children: FileTreeNode[] }
   | { type: "file";   name: string; path: string };
+type WorkspaceFallbackReason = "missing_api_key" | "provider_error";
 
 declare global {
   interface Window {
@@ -116,13 +117,13 @@ declare global {
         messages:     { role: "user" | "assistant"; content: string }[];
         linkedTopic?: TopicContext;
       }) => Promise<
-        | { ok: true;  content: string; provider: "claude" | "mock" }
+        | { ok: true;  content: string; provider: "claude" | "mock"; fallbackReason?: WorkspaceFallbackReason }
         | { ok: false; error: string }
       >;
       generateWorkspacePlan: (payload: {
         linkedTopic?: TopicContext;
       }) => Promise<
-        | { ok: true;  plan: WorkspacePlan }
+        | { ok: true;  plan: WorkspacePlan; provider: "claude" | "mock"; fallbackReason?: WorkspaceFallbackReason }
         | { ok: false; error: string }
       >;
       // Provider Settings
@@ -3125,6 +3126,14 @@ function MetricItem({ name, value, accent }: {
   );
 }
 
+function getWorkspaceFallbackMessage(reason?: WorkspaceFallbackReason): string {
+  if (reason === "missing_api_key")
+    return "Claude API 키가 없어 워크스페이스 데모 응답으로 실행됩니다.";
+  if (reason === "provider_error")
+    return "Claude 호출에 실패해 워크스페이스 데모 응답으로 전환되었습니다.";
+  return "워크스페이스 데모 응답으로 전환되었습니다.";
+}
+
 // ─── Workspace AI Chat Panel ──────────────────────────────────────
 
 function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, onSend, onGeneratePlan, onToggleStep }: {
@@ -3155,6 +3164,8 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
     // 한글 IME 조합 잔상 방지: DOM value도 즉시 비운다
     if (inputRef.current) inputRef.current.value = "";
   }
+
+  const planIsMock = plan?.provider === "mock";
 
   return (
     <div className="ws-chat">
@@ -3193,10 +3204,20 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
         <div className="ws-plan-section">
           <div className="ws-plan-header">
             <span className="ws-plan-title">{plan.title}</span>
-            <span className="ws-plan-meta">
-              {plan.steps.filter(s => s.status === "completed").length}/{plan.steps.length}
-            </span>
+            <div className="ws-plan-header-meta">
+              <span className={`ws-plan-provider ws-plan-provider-${plan.provider}`}>
+                {plan.provider === "claude" ? "Claude" : "Mock plan"}
+              </span>
+              <span className="ws-plan-meta">
+                {plan.steps.filter(s => s.status === "completed").length}/{plan.steps.length}
+              </span>
+            </div>
           </div>
+          {planIsMock && (
+            <div className="ws-plan-warning">
+              Claude API를 사용할 수 없어 데모 계획으로 생성되었습니다.
+            </div>
+          )}
           {plan.steps.map((step: WorkspacePlanStep) => (
             <div key={step.id} className={`ws-plan-step ws-plan-${step.status}`}>
               <button
@@ -3429,7 +3450,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
           appended.push({
             id:        ++wsChatMsgId.current,
             role:      "assistant",
-            content:   "Claude API unavailable — fallback workspace assistant로 전환되었습니다.",
+            content:   getWorkspaceFallbackMessage(res.fallbackReason),
             timestamp: new Date().toLocaleTimeString(),
             type:      "system",
           });
@@ -3461,6 +3482,15 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
     });
     if (res.ok) {
       setWsPlan(res.plan);
+      if (res.provider === "mock") {
+        setWsChatMessages(prev => [...prev, {
+          id:        ++wsChatMsgId.current,
+          role:      "assistant",
+          content:   `구현 계획: ${getWorkspaceFallbackMessage(res.fallbackReason)}`,
+          timestamp: new Date().toLocaleTimeString(),
+          type:      "system",
+        }]);
+      }
     } else {
       setWsChatMessages(prev => [...prev, {
         id:        ++wsChatMsgId.current,
