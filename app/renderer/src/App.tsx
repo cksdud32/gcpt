@@ -577,6 +577,35 @@ function ResizablePanels({ panes }: { panes: ResizablePane[] }) {
 const MODES = ["normal", "parsefail", "apierror", "delay", "mixed", "stress"];
 const LS_KEY = "gcpt-ws-state";
 const LS_VER = 2;
+const ONBOARDING_KEY = "gcpt-onboarding-seen-v1";
+const DEMO_PLACEHOLDER_VALUES = new Set(["Option-A", "Option-B", "Option-C", "Alt-X", "Alt-Y", "Alt-Z"]);
+
+type DemoResultMeta = {
+  isDemo: boolean;
+  hasPlaceholder: boolean;
+};
+
+function resultHasDemoPlaceholders(result: RunResult | null): boolean {
+  if (!result) return false;
+  return result.history.some(rev => {
+    const payload = rev.patch.payload as { value?: unknown; selected?: unknown; goal?: unknown; message?: unknown };
+    const value = typeof payload.value === "string"
+      ? payload.value
+      : typeof payload.selected === "string"
+      ? payload.selected
+      : "";
+    return DEMO_PLACEHOLDER_VALUES.has(value);
+  });
+}
+
+function getDemoResultMeta(result: RunResult | null): DemoResultMeta {
+  const hasPlaceholder = resultHasDemoPlaceholders(result);
+  const isNonLiveResult = !!result && result.mode !== "live";
+  return {
+    isDemo: isNonLiveResult || hasPlaceholder,
+    hasPlaceholder,
+  };
+}
 
 // Live mode 실행 시 모드별 기본 goal 목록
 const GOAL_SETS: Record<string, string[]> = {
@@ -654,6 +683,8 @@ export default function App() {
   // ── Provider Settings ─────────────────────────────────────────────
   const [providerSettings, setProviderSettings] = useState<ProvidersConfig>(DEFAULT_PROVIDERS);
   const [providerSettingsOpen, setProviderSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(() => localStorage.getItem(ONBOARDING_KEY) !== "1");
 
   // ── Analysis Modal ────────────────────────────────────────────────
   const [analysisModal, setAnalysisModal] = useState<{ topic: Topic; analysis: DiscussionAnalysis } | null>(null);
@@ -740,6 +771,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("gcpt-theme", theme);
   }, [theme]);
+
+  function closeOnboarding() {
+    localStorage.setItem(ONBOARDING_KEY, "1");
+    setOnboardingOpen(false);
+  }
 
   // ── localStorage 복원 (mount 1회) ───────────────────────────────
   useEffect(() => {
@@ -1237,6 +1273,8 @@ export default function App() {
   // AI 처리 중: liveResult (실시간) / idle: result (최종 스냅샷)
   // aiProcessing 중에 liveResult가 null이면 result로 fallback (초기 로딩 공백 방지)
   const displayResult = aiProcessing ? (liveResult ?? result) : result;
+  const demoMeta = useMemo(() => getDemoResultMeta(displayResult), [displayResult]);
+  const showDemoRunNotice = view === "engine" && !liveEnabled && !aiProcessing;
 
   // until_consensus 실행 중 상태 텍스트 — API 호출 수 + 현재 우세 의견 표시
   const enhancedLiveStatus = useMemo(() => {
@@ -1256,13 +1294,16 @@ export default function App() {
   return (
     <div className={`app theme-${theme} ${!displayResult && !aiProcessing ? "app-empty" : "app-active"}`}>
       {analysisModal && (
-        <AnalysisModal
-          goal={analysisModal.topic.goal}
-          analysis={analysisModal.analysis}
-          topic={analysisModal.topic}
-          history={result?.history}
-          onClose={() => setAnalysisModal(null)}
-        />
+        <>
+          {demoMeta.isDemo && <AnalysisDemoNotice hasPlaceholder={demoMeta.hasPlaceholder} />}
+          <AnalysisModal
+            goal={analysisModal.topic.goal}
+            analysis={analysisModal.analysis}
+            topic={analysisModal.topic}
+            history={result?.history}
+            onClose={() => setAnalysisModal(null)}
+          />
+        </>
       )}
       {providerSettingsOpen && (
         <SettingsModal
@@ -1273,6 +1314,13 @@ export default function App() {
           }}
           running={running || aiProcessing}
           onClose={() => setProviderSettingsOpen(false)}
+        />
+      )}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      {onboardingOpen && !providerSettingsOpen && (
+        <OnboardingModal
+          onStart={closeOnboarding}
+          onDismiss={closeOnboarding}
         />
       )}
       <Header
@@ -1296,6 +1344,7 @@ export default function App() {
         onStopDiscussion={handleStopDiscussion}
         theme={theme}
         onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+        onOpenHelp={() => setHelpOpen(true)}
       />
       {view === "engine" ? (
         <>
@@ -1326,15 +1375,19 @@ export default function App() {
               onProviderSettingsToggle={() => setProviderSettingsOpen(true)}
               recentTopics={(displayResult?.topics ?? []).slice(-6).reverse()}
             />
-            {!displayResult && !aiProcessing ? (
-              <WelcomeScreen
-                customGoal={customGoal}
-                onCustomGoalChange={setCustomGoal}
-                onCustomRun={runCustom}
-                running={running || aiProcessing}
-              />
-            ) : (
-            <ResizablePanels
+            <div className="engine-main">
+              {showDemoRunNotice && <DemoRunNotice />}
+              {!displayResult && !aiProcessing ? (
+                <WelcomeScreen
+                  customGoal={customGoal}
+                  onCustomGoalChange={setCustomGoal}
+                  onCustomRun={runCustom}
+                  running={running || aiProcessing}
+                />
+              ) : (
+              <>
+              {demoMeta.isDemo && <DemoResultNotice hasPlaceholder={demoMeta.hasPlaceholder} />}
+              <ResizablePanels
               panes={[
                 {
                   id: "토론 주제",
@@ -1344,6 +1397,7 @@ export default function App() {
                     <ErrorBoundary label="Topic Panel">
                       <TopicPanel
                         result={displayResult}
+                        demoMeta={demoMeta}
                         selectedTopicIdx={selectedTopicIdx}
                         onTopicClick={handleTopicClick}
                         onOpenInWorkspace={handleOpenInWorkspace}
@@ -1385,6 +1439,7 @@ export default function App() {
                         revisions={aiProcessing ? (liveResult?.history ?? []) : displayedRevisions}
                         totalCount={displayResult?.revisionCount ?? 0}
                         isFiltered={!aiProcessing && selectedTopicIdx !== null}
+                        demoMeta={demoMeta}
                         selectedRevId={selectedRevId}
                         onRevClick={handleRevClick}
                         wsLog={wsLog}
@@ -1395,7 +1450,9 @@ export default function App() {
                 },
               ]}
             />
+              </>
             )}
+            </div>
           </div>
           <MetricsBar result={displayResult} />
         </>
@@ -1412,6 +1469,46 @@ export default function App() {
           />
         </ErrorBoundary>
       )}
+    </div>
+  );
+}
+
+function DemoModeBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span className={`demo-mode-badge${compact ? " compact" : ""}`} title="실제 AI 응답이 아닌 테스트용 결과입니다.">
+      데모 모드
+    </span>
+  );
+}
+
+function DemoRunNotice() {
+  return (
+    <div className="demo-run-notice" role="status">
+      실시간 모드가 꺼져 있어 데모 응답으로 실행됩니다.
+    </div>
+  );
+}
+
+function DemoResultNotice({ hasPlaceholder }: { hasPlaceholder: boolean }) {
+  return (
+    <div className="demo-result-notice" role="status">
+      <div>
+        <DemoModeBadge />
+        <strong>실제 AI 응답이 아닌 테스트용 결과입니다.</strong>
+      </div>
+      {hasPlaceholder && (
+        <p>테스트용 선택지가 감지되었습니다. 실제 판단이 필요하면 실시간 모드를 켜 주세요.</p>
+      )}
+    </div>
+  );
+}
+
+function AnalysisDemoNotice({ hasPlaceholder }: { hasPlaceholder: boolean }) {
+  return (
+    <div className="analysis-demo-notice" role="status">
+      <DemoModeBadge />
+      <span>이 분석은 데모 응답을 기반으로 합니다.</span>
+      {hasPlaceholder && <span> 테스트용 선택지가 감지되었습니다.</span>}
     </div>
   );
 }
@@ -1467,6 +1564,114 @@ function WelcomeScreen({ customGoal, onCustomGoalChange, onCustomRun, running }:
         </div>
       </section>
     </main>
+  );
+}
+
+const HELP_ITEMS = [
+  {
+    name: "토론",
+    does: "AI들이 주제에 대해 제안, 반박, 합의를 진행하는 기본 화면입니다.",
+    when: "결정할 문제나 비교할 선택지가 있을 때 사용하세요.",
+  },
+  {
+    name: "워크스페이스",
+    does: "토론 결론을 바탕으로 파일 작업이나 구현 계획을 이어가는 화면입니다.",
+    when: "결론을 실제 코드나 문서 작업으로 옮기고 싶을 때 사용하세요.",
+  },
+  {
+    name: "다크",
+    does: "앱 색상을 어두운 테마와 밝은 테마로 전환합니다.",
+    when: "눈부심을 줄이거나 밝은 화면으로 바꾸고 싶을 때 사용하세요.",
+  },
+  {
+    name: "실행",
+    does: "현재 선택한 모드 또는 입력한 주제로 AI 토론을 시작합니다.",
+    when: "주제를 정했거나 테스트 모드를 선택한 뒤 누르세요.",
+  },
+  {
+    name: "실시간 켜기/꺼짐",
+    does: "AI 발언이 진행되는 과정을 실시간으로 볼지 선택합니다.",
+    when: "토론 흐름을 중간중간 보며 개입하고 싶을 때 켜세요.",
+  },
+  {
+    name: "더보기",
+    does: "전체 테스트, 저장, 불러오기 같은 추가 명령을 엽니다.",
+    when: "결과를 보관하거나 이전 세션을 다시 열 때 사용하세요.",
+  },
+  {
+    name: "새 토론",
+    does: "입력 화면으로 돌아가 새 주제를 시작할 준비를 합니다.",
+    when: "현재 결과와 별개로 새 결정을 시작하고 싶을 때 사용하세요.",
+  },
+  {
+    name: "최근 토론",
+    does: "현재 세션에서 최근에 만든 토론 주제를 보여줍니다.",
+    when: "방금 만든 결과를 빠르게 다시 확인할 때 사용하세요.",
+  },
+  {
+    name: "고급 설정",
+    does: "토론 방식, 깊이, 합의 방식, 안전 한도를 조정합니다.",
+    when: "더 빠르게 끝내거나 더 깊게 토론시키고 싶을 때 사용하세요.",
+  },
+  {
+    name: "분석 보기",
+    does: "AI들의 의견이 어떻게 수렴했는지 분석 화면을 엽니다.",
+    when: "결론의 근거와 논리 흐름을 더 자세히 보고 싶을 때 사용하세요.",
+  },
+  {
+    name: "변경 기록",
+    does: "토론 중 생긴 목표, 제안, 선택 같은 모든 변화를 시간순으로 보여줍니다.",
+    when: "어떤 발언이나 선택이 언제 생겼는지 추적할 때 사용하세요.",
+  },
+];
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="guide-backdrop" onMouseDown={onClose}>
+      <section className="guide-modal help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onMouseDown={e => e.stopPropagation()}>
+        <div className="guide-header">
+          <div>
+            <h2 id="help-title">GCPT 도움말</h2>
+            <p>주요 버튼이 하는 일과 언제 쓰면 좋은지 간단히 정리했습니다.</p>
+          </div>
+          <button className="guide-close" type="button" onClick={onClose}>닫기</button>
+        </div>
+        <div className="help-list">
+          {HELP_ITEMS.map(item => (
+            <article key={item.name} className="help-item">
+              <h3>{item.name}</h3>
+              <p>{item.does}</p>
+              <small>{item.when}</small>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OnboardingModal({ onStart, onDismiss }: { onStart: () => void; onDismiss: () => void }) {
+  return (
+    <div className="guide-backdrop">
+      <section className="guide-modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+        <div className="guide-header">
+          <div>
+            <h2 id="onboarding-title">GCPT 시작하기</h2>
+            <p>처음이라면 아래 흐름대로 진행하면 됩니다.</p>
+          </div>
+        </div>
+        <ol className="onboarding-steps">
+          <li><strong>토론 주제 입력</strong><span>결정하고 싶은 질문을 한 문장으로 적습니다.</span></li>
+          <li><strong>실행 클릭</strong><span>AI들이 제안과 반박을 시작합니다.</span></li>
+          <li><strong>결과 확인</strong><span>선택된 결론과 제안 목록을 확인합니다.</span></li>
+          <li><strong>깊게 보기</strong><span>분석 보기로 근거를 확인하거나 워크스페이스에서 후속 작업을 이어갑니다.</span></li>
+        </ol>
+        <div className="guide-actions">
+          <button className="primary" type="button" onClick={onStart}>시작하기</button>
+          <button className="settings-secondary" type="button" onClick={onDismiss}>다시 보지 않기</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1582,7 +1787,7 @@ function SettingsModal({ providerSettings, onProviderSettingsChange, running, on
 function Header({ view, onViewChange, executionRunning, liveSessionActive, liveStatus, label,
                   onRun, onRunAll, liveEnabled, onToggleLive,
                   canSave, onSave, canSaveTopic, onSaveTopic, onLoad, sessionStatus,
-                  discussionDepth, onStopDiscussion, theme, onToggleTheme }: {
+                  discussionDepth, onStopDiscussion, theme, onToggleTheme, onOpenHelp }: {
   view: AppView; onViewChange: (v: AppView) => void;
   executionRunning: boolean;
   liveSessionActive: boolean;
@@ -1598,6 +1803,7 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
   onStopDiscussion?: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onOpenHelp: () => void;
 }) {
   const statusText = executionRunning
     ? `● ${liveStatus || `AI 토론 중... ${label}`}`
@@ -1624,10 +1830,12 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
         <button
           className={`view-tab ${view === "engine" ? "active" : ""}`}
           onClick={() => onViewChange("engine")}
+          title="토론 화면으로 이동합니다. 주제를 입력하고 AI 토론 결과를 확인할 때 사용하세요."
         >토론</button>
         <button
           className={`view-tab ${view === "workspace" ? "active" : ""}`}
           onClick={() => onViewChange("workspace")}
+          title="결론을 바탕으로 파일 수정이나 작업 계획을 이어갈 때 사용하세요."
         >워크스페이스</button>
       </div>
       <button
@@ -1637,14 +1845,30 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
       >
         {theme === "dark" ? "다크" : "화이트"}
       </button>
+      <button
+        className="help-button"
+        type="button"
+        onClick={onOpenHelp}
+        title="GCPT 주요 버튼과 화면 사용법을 봅니다"
+        aria-label="도움말 열기"
+      >
+        도움말
+      </button>
       {view === "engine" && (
         <>
-          <button className="primary" onClick={onRun} disabled={executionRunning}>실행</button>
+          <button
+            className="primary"
+            onClick={onRun}
+            disabled={executionRunning}
+            title="선택한 테스트 모드나 입력한 주제로 AI 토론을 시작합니다."
+          >
+            실행
+          </button>
           <button
             className={`live-btn ${liveEnabled ? "active" : ""}`}
             onClick={onToggleLive}
             disabled={executionRunning}
-            title={liveEnabled ? "실시간 모드 끄기" : "실시간 토론 모드 켜기"}
+            title={liveEnabled ? "실시간 토론을 끄고 일반 실행으로 돌아갑니다." : "AI 발언이 진행되는 과정을 실시간으로 보며 토론합니다."}
           >
             {liveEnabled ? "실시간 켜짐" : "실시간 꺼짐"}
           </button>
@@ -1658,7 +1882,7 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
             </button>
           )}
           <details className="header-more">
-            <summary>더보기</summary>
+            <summary title="저장, 불러오기, 전체 테스트 같은 추가 명령을 엽니다.">더보기</summary>
             <div className="header-more-menu">
               <button
                 onClick={onRunAll}
@@ -1737,13 +1961,14 @@ function Sidebar({ modes, selected, passMap, onSelect,
         <button
           className={`side-nav-item ${selected === "custom" ? "active" : ""}`}
           onClick={onNewDiscussion}
+          title="입력 화면으로 돌아가 새 토론을 시작합니다."
         >
           새 토론
         </button>
-        <button className="side-nav-item" type="button">
+        <button className="side-nav-item" type="button" title="현재 세션의 최근 토론 목록을 확인합니다.">
           최근 토론
         </button>
-        <button className="side-nav-item" type="button" onClick={onProviderSettingsToggle}>
+        <button className="side-nav-item" type="button" onClick={onProviderSettingsToggle} title="AI 연결과 고급 설정을 관리합니다.">
           설정
         </button>
       </nav>
@@ -1779,7 +2004,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
       </section>
 
       <details className="discussion-settings">
-        <summary>토론 설정</summary>
+        <summary title="토론 방식, 깊이, 합의 방식을 조정하는 고급 설정입니다.">고급 설정</summary>
 
         <div className="disc-mode-section">
           <div className="sidebar-title">대화 방식</div>
@@ -1916,8 +2141,9 @@ function Sidebar({ modes, selected, passMap, onSelect,
 
 // ─── Topic Panel ─────────────────────────────────────────────────
 
-function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace, onDeleteTopic, executionRunning, onShowAnalysis }: {
+function TopicPanel({ result, demoMeta, selectedTopicIdx, onTopicClick, onOpenInWorkspace, onDeleteTopic, executionRunning, onShowAnalysis }: {
   result: RunResult | null;
+  demoMeta: DemoResultMeta;
   selectedTopicIdx: number | null;
   onTopicClick: (idx: number) => void;
   onOpenInWorkspace?: (idx: number) => void;
@@ -1933,6 +2159,7 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
     <div className="panel">
       <div className="panel-title">
         토론 주제
+        {demoMeta.isDemo && <DemoModeBadge />}
         {result && <span className="panel-hint">{result.topics.length}개 토론</span>}
         {hint && <span className="panel-hint">{hint}</span>}
       </div>
@@ -1945,6 +2172,7 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
           <TopicCard
             key={`${topic.startRevId}-${i}`}
             topic={topic}
+            demoMeta={demoMeta}
             analysis={result.analyses?.[i]}
             isSelected={selectedTopicIdx === i}
             onClick={() => onTopicClick(i)}
@@ -1960,7 +2188,7 @@ function TopicPanel({ result, selectedTopicIdx, onTopicClick, onOpenInWorkspace,
 
 // ─── Aggregation Summary ─────────────────────────────────────────
 
-function AggregationSummary({ topic }: { topic: Topic }) {
+function AggregationSummary({ topic, demoMeta }: { topic: Topic; demoMeta: DemoResultMeta }) {
   // useMemo: topic 참조가 바뀔 때만 재계산 (live 토론 중 매 update마다 호출 방지)
   const agg     = useMemo(() => computeAggregation(topic), [topic]);
   const stances = useMemo(() => computeStances(topic),     [topic]);
@@ -1972,7 +2200,13 @@ function AggregationSummary({ topic }: { topic: Topic }) {
 
   return (
     <div className="agg-summary">
-      <div className="agg-title">현재 우세 의견</div>
+      <div className="agg-title">
+        현재 우세 의견
+        {demoMeta.isDemo && <DemoModeBadge compact />}
+      </div>
+      {demoMeta.hasPlaceholder && (
+        <div className="demo-inline-warning">테스트용 선택지가 감지되었습니다. 실제 판단이 필요하면 실시간 모드를 켜 주세요.</div>
+      )}
       <div className="agg-proposals">
         {agg.slice(0, 3).map((ap, i) => (
           <div key={ap.normalKey} className={`agg-row${ap.isSelected ? " agg-selected" : ""}`}>
@@ -2092,8 +2326,9 @@ function ConversationChatView({ proposals }: { proposals: Proposal[] }) {
 
 // ─── Topic Card ───────────────────────────────────────────────────
 
-function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenInWorkspace, onDelete, onShowAnalysis }: {
+function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClick, onOpenInWorkspace, onDelete, onShowAnalysis }: {
   topic: Topic;
+  demoMeta: DemoResultMeta;
   analysis?: DiscussionAnalysis;
   isSelected: boolean;
   onClick: () => void;
@@ -2205,9 +2440,14 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
                 <span className={`topic-evo-badge ${badgeClass}`}>
                   {badgeLabel}
                 </span>
+                {demoMeta.isDemo && <DemoModeBadge compact />}
                 <span className="topic-evo-conf">{Math.round(evo.conf * 100)}%</span>
                 {analysis && onShowAnalysis && (
-                  <button className="topic-analysis-btn topic-evo-btn" onClick={() => onShowAnalysis(analysis)}>
+                  <button
+                    className="topic-analysis-btn topic-evo-btn"
+                    onClick={() => onShowAnalysis(analysis)}
+                    title="결론이 나온 과정과 수렴 이유를 자세히 봅니다."
+                  >
                     분석 보기
                   </button>
                 )}
@@ -2239,6 +2479,7 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
             )}
             {analysis && topic.interactionStyle !== "conversation" && (
               <div className="topic-analysis-bar" onClick={e => e.stopPropagation()}>
+                {demoMeta.isDemo && <DemoModeBadge compact />}
                 {analysis.saturation?.saturated ? (
                   <>
                     <span className="topic-saturation-badge">포화 수렴</span>
@@ -2247,7 +2488,11 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
                 ) : (
                   <span className="topic-analysis-summary">{analysis.summary}</span>
                 )}
-                <button className="topic-analysis-btn" onClick={() => onShowAnalysis?.(analysis)}>
+                <button
+                  className="topic-analysis-btn"
+                  onClick={() => onShowAnalysis?.(analysis)}
+                  title="토론 요약, 수렴 상태, 논리 흐름을 분석 화면에서 봅니다."
+                >
                   토론 분석 보기
                 </button>
               </div>
@@ -2267,7 +2512,7 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
       {isUndecided && topic.status !== "decided" && (
         <div className="topic-undecided-label">⚠ 미결정</div>
       )}
-      {topic.interactionStyle !== "conversation" && <AggregationSummary topic={topic} />}
+      {topic.interactionStyle !== "conversation" && <AggregationSummary topic={topic} demoMeta={demoMeta} />}
       {topic.interactionStyle !== "conversation" && <StanceHistoryView topic={topic} />}
       <div className="proposals">
         {topic.interactionStyle === "conversation"
@@ -2293,9 +2538,10 @@ function TopicCard({ topic, analysis: propAnalysis, isSelected, onClick, onOpenI
 
 // ─── Timeline Panel ───────────────────────────────────────────────
 
-function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRevClick, wsLog, revMap }: {
+function TimelinePanel({ revisions, totalCount, isFiltered, demoMeta, selectedRevId, onRevClick, wsLog, revMap }: {
   revisions: Revision[]; totalCount: number;
   isFiltered: boolean; selectedRevId: number | null;
+  demoMeta: DemoResultMeta;
   onRevClick: (id: number) => void;
   wsLog?: WsLogEntry[];
   revMap?: Map<number, Revision>;
@@ -2308,6 +2554,7 @@ function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRev
     <div className="panel timeline-panel">
       <div className="panel-title">
         {title}
+        {demoMeta.isDemo && <DemoModeBadge />}
         {isFiltered && <span className="panel-filter-badge">필터 중</span>}
       </div>
       <div className="panel-body" style={{ padding: 0 }}>
