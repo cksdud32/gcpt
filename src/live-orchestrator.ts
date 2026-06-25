@@ -1,5 +1,4 @@
 import { RevisionStore } from "./RevisionStore.js";
-import { MockGPTWorker, MockClaudeWorker, MockGeminiWorker } from "./orchestrator.js";
 import { RealGPTWorker } from "./workers/gpt.js";
 import { RealClaudeWorker } from "./workers/claude.js";
 import { RealGeminiWorker } from "./workers/gemini.js";
@@ -15,14 +14,6 @@ import type { RunResult } from "./test-modes.js";
 type PhaseInjectable    = { setPhaseInstruction: (s: string) => void };
 type MemoryInjectable   = { setMemoryContext:    (s: string) => void };
 type BudgetInjectable   = { setDiscussionBudget: (budget: DiscussionBudget) => void };
-
-const LIVE_MOCK_CONFIG = {
-  latencyMs: 400,
-  parseFailRate: 0,
-  apiErrorRate: 0,
-  promptTokens: 200,
-  completionTokens: 100,
-};
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
@@ -514,48 +505,55 @@ export class LiveOrchestrator {
     console.log("[budget] effective", this.formatBudgetForLog(effectiveBudget));
 
     type WorkerHandle = { handle: (rev: Revision, id: number | null) => Promise<void> };
-    const workerEntries: Array<{ name: string; author: string; worker: WorkerHandle; isMock: boolean }> = [];
+    const workerEntries: Array<{ name: string; author: string; worker: WorkerHandle }> = [];
 
     if (providers.gpt.enabled) {
-      const isMock = !providers.gpt.apiKey;
-      console.log("[provider] creating worker", { provider: "gpt", enabled: true, hasKey: !!providers.gpt.apiKey, model: providers.gpt.model, isMock });
-      const w = isMock
-        ? new MockGPTWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget)
-        : new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, effectiveBudget, providers.gpt.model);
-      if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-      if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-      workerEntries.push({ name: isMock ? "GPT (Mock)" : "GPT", author: "gpt", worker: w, isMock });
+      if (!providers.gpt.apiKey.trim()) {
+        console.warn("[provider] skipping worker — missing API key", { provider: "gpt", enabled: true, model: providers.gpt.model });
+      } else {
+        console.log("[provider] creating worker", { provider: "gpt", enabled: true, hasKey: true, model: providers.gpt.model });
+        const w = new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, effectiveBudget, providers.gpt.model);
+        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
+        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
+        workerEntries.push({ name: "GPT", author: "gpt", worker: w });
+      }
     } else {
       console.log("[provider] skipping worker", { provider: "gpt", enabled: false });
     }
 
     if (providers.claude.enabled) {
-      const isMock = !providers.claude.apiKey;
-      console.log("[provider] creating worker", { provider: "claude", enabled: true, hasKey: !!providers.claude.apiKey, model: providers.claude.model, isMock });
-      const w = isMock
-        ? new MockClaudeWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget, true)
-        : new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, effectiveBudget, providers.claude.model);
-      if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-      if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-      workerEntries.push({ name: isMock ? "Claude (Mock)" : "Claude", author: "claude", worker: w, isMock });
+      if (!providers.claude.apiKey.trim()) {
+        console.warn("[provider] skipping worker — missing API key", { provider: "claude", enabled: true, model: providers.claude.model });
+      } else {
+        console.log("[provider] creating worker", { provider: "claude", enabled: true, hasKey: true, model: providers.claude.model });
+        const w = new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, effectiveBudget, providers.claude.model);
+        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
+        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
+        workerEntries.push({ name: "Claude", author: "claude", worker: w });
+      }
     } else {
       console.log("[provider] skipping worker", { provider: "claude", enabled: false });
     }
 
     if (providers.gemini.enabled) {
-      const isMock = !providers.gemini.apiKey;
-      console.log("[provider] creating worker", { provider: "gemini", enabled: true, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model, isMock });
-      const w = isMock
-        ? new MockGeminiWorker(this.store, this.metrics, LIVE_MOCK_CONFIG, effectiveBudget)
-        : new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, effectiveBudget, providers.gemini.model);
-      if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-      if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-      workerEntries.push({ name: isMock ? "Gemini (Mock)" : "Gemini", author: "gemini", worker: w, isMock });
+      if (!providers.gemini.apiKey.trim()) {
+        console.warn("[provider] skipping worker — missing API key", { provider: "gemini", enabled: true, model: providers.gemini.model });
+      } else {
+        console.log("[provider] creating worker", { provider: "gemini", enabled: true, hasKey: true, model: providers.gemini.model });
+        const w = new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, effectiveBudget, providers.gemini.model);
+        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
+        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
+        workerEntries.push({ name: "Gemini", author: "gemini", worker: w });
+      }
     } else {
       console.log("[provider] skipping worker", { provider: "gemini", enabled: false });
+    }
+
+    if (workerEntries.length < 2) {
+      throw new Error("실시간 토론에는 API 키가 설정된 AI provider가 최소 2개 필요합니다");
     }
 
     this.activeWorkerNames = workerEntries.map(e => e.name);
@@ -563,9 +561,8 @@ export class LiveOrchestrator {
     this.evalBudget        = effectiveBudget;
     this.evalAutoConsensus = autoConsensus;
 
-    const hasRealApi    = workerEntries.some(e => !e.isMock);
     const workerAuthors = workerEntries.map(e => e.author);
-    console.log("[providers] active workers:", workerEntries.map(e => `${e.author}(${e.isMock ? "mock" : "real"})`));
+    console.log("[providers] active workers:", workerEntries.map(e => `${e.author}(real)`));
     console.log(`[Live] workers: ${this.activeWorkerNames.join(" ↔ ")} | autoConsensus=${autoConsensus} stability=${budget.stabilityMode}`);
 
     // ── Round state ────────────────────────────────────────────────
@@ -676,7 +673,7 @@ export class LiveOrchestrator {
 
       // 각 worker dispatch — proposal이면 round gate 적용
       for (let i = 0; i < workerEntries.length; i++) {
-        const { name, author, worker, isMock } = workerEntries[i];
+        const { name, author, worker } = workerEntries[i];
 
         // round gate: 이미 이 라운드에서 dispatch된 actor는 skip
         if (isProposal && roundDispatchedActors.has(author)) {
@@ -703,10 +700,7 @@ export class LiveOrchestrator {
         const capturedIsProposal = isProposal;
         const capturedGoalRevId  = goalRevId;
         const capturedRoundId    = currentRoundId;   // 이 dispatch 시점의 라운드 ID
-        const delayMs = isMock && !hasRealApi ? i * 300 : 0;
-
         this.track(async () => {
-          if (delayMs > 0) await sleep(delayMs);
           // isStopped: 토론 종료 후 in-flight worker 응답 즉시 폐기
           if (this.isStopped) {
             console.log(`[live] worker blocked by isStopped { actor: "${name}", revId: ${rev.id} }`);

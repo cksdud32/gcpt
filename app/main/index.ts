@@ -68,6 +68,26 @@ let currentProviders: ProvidersConfig = defaultProviders();
 
 let mainWindow: BrowserWindow | null = null;
 
+type ProviderName = keyof ProvidersConfig;
+const LIVE_PROVIDER_NAMES: ProviderName[] = ["gpt", "claude", "gemini"];
+const LIVE_PROVIDER_LABELS: Record<ProviderName, string> = {
+  gpt:    "GPT",
+  claude: "Claude",
+  gemini: "Gemini",
+};
+
+function getEnabledProvidersWithoutApiKey(settings: ProvidersConfig): ProviderName[] {
+  return LIVE_PROVIDER_NAMES.filter(p => settings[p].enabled && !settings[p].apiKey.trim());
+}
+
+function getRunnableLiveProviders(settings: ProvidersConfig): ProviderName[] {
+  return LIVE_PROVIDER_NAMES.filter(p => settings[p].enabled && !!settings[p].apiKey.trim());
+}
+
+function formatProviderList(providers: ProviderName[]): string {
+  return providers.map(p => LIVE_PROVIDER_LABELS[p]).join(", ");
+}
+
 // webContents.send 안전 래퍼 — 창이 닫힌 후 orphan 이벤트가 도달해도 crash 방지
 function safeSend(channel: string, ...args: unknown[]): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -338,11 +358,17 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
 }) => {
   const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto", safetyLimitEnabled, interactionStyle = "debate" } = payload;
 
-  // 활성화된 provider가 2개 미만이면 실행 차단
-  const enabledCount = Object.values(currentProviders).filter(p => p.enabled).length;
-  if (enabledCount < 2) {
-    console.warn("[main] discussion blocked — not enough enabled providers:", enabledCount);
-    return { ok: false, error: "최소 2개의 AI provider를 활성화해야 합니다" };
+  const enabledWithoutKey = getEnabledProvidersWithoutApiKey(currentProviders);
+  if (enabledWithoutKey.length > 0) {
+    console.warn("[main] discussion blocked — enabled providers missing API keys:", enabledWithoutKey);
+    return { ok: false, error: `API 키가 없는 provider가 활성화되어 있습니다: ${formatProviderList(enabledWithoutKey)}` };
+  }
+
+  // 활성화 + API 키 보유 provider가 2개 미만이면 실행 차단
+  const runnableProviders = getRunnableLiveProviders(currentProviders);
+  if (runnableProviders.length < 2) {
+    console.warn("[main] discussion blocked — not enough runnable providers:", runnableProviders);
+    return { ok: false, error: "실시간 토론에는 API 키가 설정된 AI provider가 최소 2개 필요합니다" };
   }
 
   // 기존 세션 종료

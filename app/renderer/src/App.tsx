@@ -664,11 +664,30 @@ interface ProvidersConfig {
   claude: ProviderSettings;
   gemini: ProviderSettings;
 }
+type ProviderName = keyof ProvidersConfig;
 const DEFAULT_PROVIDERS: ProvidersConfig = {
   gpt:    { enabled: false, apiKey: "", model: "gpt-5-mini" },
   claude: { enabled: false, apiKey: "", model: "claude-haiku-4-5-20251001" },
   gemini: { enabled: false, apiKey: "", model: "gemini-2.5-flash" },
 };
+const PROVIDER_NAMES: ProviderName[] = ["gpt", "claude", "gemini"];
+const PROVIDER_LABELS: Record<ProviderName, string> = {
+  gpt:    "GPT",
+  claude: "Claude",
+  gemini: "Gemini",
+};
+
+function runnableProviderNames(settings: ProvidersConfig): ProviderName[] {
+  return PROVIDER_NAMES.filter(p => settings[p].enabled && !!settings[p].apiKey.trim());
+}
+
+function enabledProvidersWithoutApiKey(settings: ProvidersConfig): ProviderName[] {
+  return PROVIDER_NAMES.filter(p => settings[p].enabled && !settings[p].apiKey.trim());
+}
+
+function formatProviderNames(providers: ProviderName[]): string {
+  return providers.map(p => PROVIDER_LABELS[p]).join(", ");
+}
 
 const DISC_MODE_LABELS: Record<DiscussionMode, string> = {
   general:     "일반",
@@ -1136,10 +1155,16 @@ export default function App() {
 
   // Live 실행 — runSelected/runCustom에서 liveEnabled 시 호출
   async function startLiveRun(goals: string[], dm: DiscussionMode = discussionMode, depth: DiscussionDepth = discussionDepth, cm: ConsensusMode = consensusMode) {
-    // Provider validation
-    const enabledCount = Object.values(providerSettings).filter(p => p.enabled).length;
-    if (enabledCount < 2) {
-      setLiveStatus("최소 2개의 AI provider를 활성화해야 합니다 (API 설정 확인)");
+    const enabledWithoutKey = enabledProvidersWithoutApiKey(providerSettings);
+    if (enabledWithoutKey.length > 0) {
+      setLiveStatus(`API 키가 없는 provider가 활성화되어 있습니다: ${formatProviderNames(enabledWithoutKey)}`);
+      setTimeout(() => setLiveStatus(""), 4000);
+      return;
+    }
+
+    const runnableCount = runnableProviderNames(providerSettings).length;
+    if (runnableCount < 2) {
+      setLiveStatus("실시간 토론에는 API 키가 설정된 AI provider가 최소 2개 필요합니다");
       setTimeout(() => setLiveStatus(""), 4000);
       return;
     }
@@ -1160,7 +1185,8 @@ export default function App() {
       if (!res.ok) {
         console.error("[renderer] startLiveDiscussion failed:", res.error);
         setAiProcessing(false);
-        setLiveStatus("");
+        setLiveStatus(res.error ?? "실시간 토론을 시작하지 못했습니다");
+        setTimeout(() => setLiveStatus(""), 4000);
       }
       // 완료/정리는 onDiscussionDone 핸들러에서 처리
     } catch (e) {
@@ -1970,9 +1996,9 @@ function Sidebar({ modes, selected, passMap, onSelect,
 }) {
   void onProviderSettingsChange;
   void providerSettingsOpen;
-  const activeProviders = (["gpt", "claude", "gemini"] as const).filter(p => providerSettings[p].enabled);
-  const providerLabel = (p: "gpt" | "claude" | "gemini") =>
-    p === "gpt" ? "GPT" : p === "claude" ? "Claude" : "Gemini";
+  const runnableProviders = runnableProviderNames(providerSettings);
+  const missingKeyProviders = enabledProvidersWithoutApiKey(providerSettings);
+  const providerLabel = (p: ProviderName) => PROVIDER_LABELS[p];
 
   return (
     <div className="sidebar">
@@ -2021,13 +2047,19 @@ function Sidebar({ modes, selected, passMap, onSelect,
           <button type="button" onClick={onProviderSettingsToggle}>관리</button>
         </div>
         <div className="provider-pill-row">
-          {(["gpt", "claude", "gemini"] as const).map(p => (
+          {PROVIDER_NAMES.map(p => (
             <span key={p} className={`provider-pill ${providerSettings[p].enabled ? "connected" : ""}`}>
               {providerLabel(p)}
             </span>
           ))}
         </div>
-        <p>{activeProviders.length >= 2 ? `${activeProviders.length}개 모델로 토론할 수 있습니다` : "토론에는 최소 2개의 모델이 필요합니다"}</p>
+        <p>
+          {missingKeyProviders.length > 0
+            ? `API 키 필요: ${formatProviderNames(missingKeyProviders)}`
+            : runnableProviders.length >= 2
+              ? `${runnableProviders.length}개 모델로 토론할 수 있습니다`
+              : "토론에는 API 키가 설정된 모델이 최소 2개 필요합니다"}
+        </p>
       </section>
 
       <details className="discussion-settings">
