@@ -90,11 +90,17 @@ export interface SelectOptionPayload {
   selected: string;
 }
 
+export type ConvergenceSource = "auto_evaluator" | "manual_policy" | "manual_select";
+export type ConfidenceKind = "analysis" | "evaluator";
+
 // 오케스트레이터 자동 수렴 — 실제 사용자 선택과 구분
 export interface ConsensusReachedPayload {
   type: "consensus_reached";
   selected: string; // 승리 제안의 value
   winner: Author;   // 승리 제안의 author (gpt/gemini/claude)
+  convergenceSource?: ConvergenceSource;
+  confidenceKind?: ConfidenceKind;
+  isMockAffected?: boolean;
 }
 
 export interface UserOverridePayload {
@@ -217,6 +223,9 @@ export interface Topic {
     revisionId: number;
     selectedBy: Author;
     content: ProposeDecisionPayload | ProposeAlternativePayload;
+    convergenceSource?: ConvergenceSource;
+    confidenceKind?: ConfidenceKind;
+    isMockAffected?: boolean;
   } | null;
   // ── Segment tracking ──────────────────────────────────────────
   segments:                  DiscussionSegment[];   // 세그먼트 이력 (항상 최소 1개)

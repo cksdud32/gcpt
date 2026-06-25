@@ -345,6 +345,7 @@ export class LiveOrchestrator {
             type:     "consensus_reached",
             selected: (winner.patch.payload as { value: string }).value,
             winner:   winner.author,
+            convergenceSource: "auto_evaluator",
           },
           rationale: "Evaluator: composite consensus conditions met",
         });
@@ -930,6 +931,7 @@ export class LiveOrchestrator {
         type:     "consensus_reached",
         selected: (winner.patch.payload as { value: string }).value,
         winner:   winner.author,
+        convergenceSource: "manual_policy",
       },
       rationale: "User accepted best proposal (auto-policy)",
     });
@@ -982,6 +984,7 @@ export class LiveOrchestrator {
         type:     "consensus_reached",
         selected: value,
         winner:   rev.author,
+        convergenceSource: "manual_select",
       },
       rationale: "User directly selected this proposal",
     });

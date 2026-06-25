@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, Component, Fragment } from "react";
 import type { ReactNode, ErrorInfo, PointerEvent as ReactPointerEvent } from "react";
 import type { RunResult } from "../../../src/test-modes";
-import type { Author, Revision, Topic, Proposal, DiscussionDepth, ConsensusMode, DiscussionAnalysis, InteractionStyle } from "../../../src/types";
+import type { Author, Revision, Topic, Proposal, DiscussionDepth, ConsensusMode, DiscussionAnalysis, InteractionStyle, ConvergenceSource } from "../../../src/types";
 import { DEPTH_LABELS, CONSENSUS_LABELS } from "../../../src/types";
 import { analyzeDiscussion } from "../../../src/analysis";
 import { AnalysisModal } from "./AnalysisModal";
@@ -584,6 +584,26 @@ type DemoResultMeta = {
   isDemo: boolean;
   hasPlaceholder: boolean;
 };
+
+function getConsensusSourceFromRevision(rev: Revision): ConvergenceSource {
+  const payload = rev.patch.payload as { convergenceSource?: ConvergenceSource };
+  if (payload.convergenceSource) return payload.convergenceSource;
+  if (rev.patch.rationale === "User accepted best proposal (auto-policy)") return "manual_policy";
+  if (rev.patch.rationale === "User directly selected this proposal") return "manual_select";
+  return "auto_evaluator";
+}
+
+function getConsensusSourceLabel(source?: ConvergenceSource): string {
+  if (source === "manual_policy") return "수동 채택";
+  if (source === "manual_select") return "직접 선택";
+  return "자동 수렴";
+}
+
+function getConsensusSourceDescription(source?: ConvergenceSource): string {
+  if (source === "manual_policy") return "사용자가 현재 최고 점수 제안을 채택했습니다.";
+  if (source === "manual_select") return "사용자가 이 제안을 직접 선택했습니다.";
+  return "평가기가 합의 조건을 충족해 종료했습니다.";
+}
 
 function isKnownDemoMode(mode: string | undefined): boolean {
   if (!mode) return false;
@@ -1422,6 +1442,7 @@ export default function App() {
                     <ErrorBoundary label="Discussion Panel">
                       <DiscussionPanel
                         result={displayResult}
+                        demoMeta={demoMeta}
                         selectedTopicIdx={selectedTopicIdx}
                         liveStatus={enhancedLiveStatus}
                         liveRunning={aiProcessing}
@@ -2447,7 +2468,7 @@ function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClic
                   {badgeLabel}
                 </span>
                 {demoMeta.isDemo && <DemoModeBadge compact />}
-                <span className="topic-evo-conf">{Math.round(evo.conf * 100)}%</span>
+                <span className="topic-evo-conf">분석 신뢰도 {Math.round(evo.conf * 100)}%</span>
                 {analysis && onShowAnalysis && (
                   <button
                     className="topic-analysis-btn topic-evo-btn"
@@ -2466,7 +2487,7 @@ function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClic
               <div className="topic-evo-text">{evo.text}</div>
               {selectedVal && !evo.isFinalResolution && (
                 <div className="topic-winner-secondary">
-                  <span className="topic-winner-label">evaluator 선택</span>
+                  <span className="topic-winner-label">{getConsensusSourceLabel(topic.selectedOption?.convergenceSource)}</span>
                   <span className="topic-winner-val">{selectedVal}</span>
                   <span className="topic-winner-by">— {topic.selectedOption!.selectedBy}</span>
                 </div>
@@ -2480,7 +2501,7 @@ function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClic
             {selectedVal && (
               <div className="topic-selected">
                 ✓ {selectedVal}
-                <span className="topic-selected-by">by {topic.selectedOption!.selectedBy}</span>
+                <span className="topic-selected-by">{getConsensusSourceLabel(topic.selectedOption?.convergenceSource)} · {topic.selectedOption!.selectedBy}</span>
               </div>
             )}
             {analysis && topic.interactionStyle !== "conversation" && (
@@ -2645,10 +2666,11 @@ function buildDiscussionItems(msgs: Revision[]): DiscItem[] {
 
 // ─── AI Discussion Panel ──────────────────────────────────────────
 
-function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, isLiveSession,
+function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveRunning, isLiveSession,
                            onInterjection, isManualMode, onAcceptConsensus, onSelectProposal,
                            onStopDiscussion }: {
   result: RunResult | null;
+  demoMeta: DemoResultMeta;
   selectedTopicIdx: number | null;
   liveStatus?: string;
   liveRunning?: boolean;
@@ -2766,6 +2788,7 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
     <div className="panel discussion-panel">
       <div className="panel-title">
         AI 토론
+        {demoMeta.isDemo && <DemoModeBadge compact />}
         {msgs.length > 0 && <span className="panel-hint">{msgs.length}개 발언</span>}
         {liveStatus && <span className="disc-live-status">{liveStatus}</span>}
       </div>
@@ -2838,9 +2861,9 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
           const isDeadlock  = t === "discussion_deadlock";
           const isPaused    = t === "discussion_paused";
 
+          const consensusSource = isConsensus ? getConsensusSourceFromRevision(rev) : undefined;
           const badgeLabel =
-            isConsensus && evoConclusion ? "진화된 합의" :
-            isConsensus                  ? "자동 수렴"   :
+            isConsensus    ? getConsensusSourceLabel(consensusSource) :
             isDeadlock     ? "교착 감지" :
             isPaused       ? "토론 중지" :
             isInterjection ? "의견"     :
@@ -2862,8 +2885,8 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
 
           const displayReason = isConsensus
             ? evoConclusion
-              ? `초기 evaluator 선택: ${p.selected as string ?? ""} — ${p.winner ?? ""}`
-              : `결정: ${p.winner ?? ""}`
+              ? `${getConsensusSourceDescription(consensusSource)} 분석 결론은 별도 계산입니다. 초기 선택: ${p.selected as string ?? ""} — ${p.winner ?? ""}`
+              : `${getConsensusSourceDescription(consensusSource)} 결정: ${p.winner ?? ""}`
             : (!isInterjection && !isDeadlock && !isPaused ? (p.reason as string ?? "") : "");
 
           const showSelectBtn =
@@ -2880,6 +2903,7 @@ function DiscussionPanel({ result, selectedTopicIdx, liveStatus, liveRunning, is
                 <span className={`disc-badge${isConsensus ? " consensus" : ""}${isInterjection ? " interjection" : ""}${isDeadlock ? " deadlock" : ""}${isPaused ? " paused" : ""}`}>
                   {badgeLabel}
                 </span>
+                {isConsensus && demoMeta.isDemo && <DemoModeBadge compact />}
                 {showSelectBtn && (
                   <button
                     className="disc-select-btn"

@@ -186,6 +186,9 @@ export class RevisionStore {
             revisionId: rev.id,
             selectedBy: rev.author,
             content: targetPayload as ProposeDecisionPayload | ProposeAlternativePayload,
+            convergenceSource: payload.type === "consensus_reached" ? payload.convergenceSource : undefined,
+            confidenceKind: payload.type === "consensus_reached" ? payload.confidenceKind : undefined,
+            isMockAffected: payload.type === "consensus_reached" ? payload.isMockAffected : undefined,
           };
           ownerTopic.status = "decided";
           break;
