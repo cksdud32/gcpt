@@ -398,6 +398,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   console.log("[ipc] selected orchestrator = LiveOrchestrator");
   const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced };
   if (safetyLimitEnabled !== undefined) budget.safetyLimitEnabled = safetyLimitEnabled;
+  console.log("[main] fresh live budget", { depth, safetyLimitEnabled: budget.safetyLimitEnabled });
   const timeoutMs = budget.safetyTimeoutMs ?? DEFAULT_DISCUSSION_TIMEOUT_MS;
 
   const orch = new LiveOrchestrator(
@@ -433,18 +434,21 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
 });
 
 // { ok: true } 반환 — renderer가 성공 여부를 알 수 있음
-ipcMain.handle("discussion:interject", (_event, message: string) => {
+ipcMain.handle("discussion:interject", (_event, payload: string | { message: string; safetyLimitEnabled?: boolean }) => {
+  const message = typeof payload === "string" ? payload : payload.message;
+  const safetyLimitEnabled = typeof payload === "string" ? undefined : payload.safetyLimitEnabled;
   const hasOrch = !!liveOrchestrator;
   console.log("[main] interject received", {
     hasOrchestrator: hasOrch,
     message: message.slice(0, 40),
+    safetyLimitEnabled,
   });
   if (!liveOrchestrator) {
     console.log("[main] interject ignored — no orchestrator (new discussion not started yet)");
     return { ok: false };
   }
   // isStopped 여부와 무관하게 interject 호출 — LiveOrchestrator 내부에서 new segment로 재개
-  liveOrchestrator.interject(message);
+  liveOrchestrator.interject(message, { safetyLimitEnabled });
   return { ok: true };
 });
 

@@ -72,8 +72,8 @@ contextBridge.exposeInMainWorld("api", {
   }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke("start-live-discussion", payload),
 
-  sendInterjection: (message: string): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke("discussion:interject", message),
+  sendInterjection: (payload: { message: string; safetyLimitEnabled?: boolean }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("discussion:interject", payload),
 
   stopDiscussion: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke("discussion:stop"),

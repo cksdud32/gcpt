@@ -55,7 +55,7 @@ function getCurrentGoal(store: RevisionStore): string {
 
 abstract class Worker {
   protected spokenAt: Map<number, number> = new Map();
-  protected readonly maxRoundsPerWorker: number;
+  protected maxRoundsPerWorker: number;
 
   constructor(protected store: RevisionStore, budget?: DiscussionBudget) {
     this.maxRoundsPerWorker = budget?.maxRoundsPerWorker ?? DEFAULT_BUDGET.maxRoundsPerWorker;
@@ -71,6 +71,10 @@ abstract class Worker {
 
   protected canSpeak(goalRevId: number) {
     return this.speakCount(goalRevId) < this.maxRoundsPerWorker;
+  }
+
+  setDiscussionBudget(budget: DiscussionBudget): void {
+    this.maxRoundsPerWorker = budget.maxRoundsPerWorker;
   }
 
   // capturedGoalRevId: subscribe 시점에 Orchestrator가 캡처해서 전달

@@ -68,13 +68,17 @@ export class RealGPTWorker {
   private client: OpenAI;
   private spokenAt = new Map<number, number>();
   private respondedInterjections = new Set<number>(); // interjection rev.id
-  private readonly maxPerTopic: number;
-  private readonly maxDistinctProposals: number;
+  private maxPerTopic: number;
+  private maxDistinctProposals: number;
   private phaseInstruction = "";
   private memoryContext    = "";
 
   setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
   setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  setDiscussionBudget(budget: DiscussionBudget): void {
+    this.maxPerTopic          = budget.maxRoundsPerWorker;
+    this.maxDistinctProposals = budget.maxDistinctProposals;
+  }
   private phaseNote(): string {
     return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
   }

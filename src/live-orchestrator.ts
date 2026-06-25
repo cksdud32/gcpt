@@ -14,6 +14,7 @@ import type { RunResult } from "./test-modes.js";
 
 type PhaseInjectable    = { setPhaseInstruction: (s: string) => void };
 type MemoryInjectable   = { setMemoryContext:    (s: string) => void };
+type BudgetInjectable   = { setDiscussionBudget: (budget: DiscussionBudget) => void };
 
 const LIVE_MOCK_CONFIG = {
   latencyMs: 400,
@@ -51,11 +52,14 @@ export class LiveOrchestrator {
   private cleanupRound: (() => void) | null = null;  // round 상태 즉시 정리
   // continuation loop에서 재사용할 goal 수준 timeout (setupWorkers 후 runGoals에서 설정)
   private effectiveGoalTimeoutMs = 90_000;
+  private baseGoalTimeoutMs = 90_000;
 
   // ConsensusEvaluator 인스턴스 — setupWorkers 시 초기화
   private evaluator: ConsensusEvaluator | null = null;
   private evalBudget: DiscussionBudget | null   = null;
+  private baseBudget: DiscussionBudget | null   = null;
   private evalAutoConsensus = true;
+  private budgetInjectableWorkers: BudgetInjectable[] = [];
   // 교착 경고가 이미 emit된 goalRevId 집합 — 중복 방지
   private deadlockWarned = new Set<number>();
   // Phase system
@@ -67,6 +71,32 @@ export class LiveOrchestrator {
     private onUpdate: (history: Revision[], topics: Topic[]) => void,
     private onStatus: (msg: string) => void,
   ) {}
+
+  private toEffectiveBudget(budget: DiscussionBudget): DiscussionBudget {
+    return budget.safetyLimitEnabled
+      ? { ...budget }
+      : { ...budget, maxRoundsPerWorker: Number.MAX_SAFE_INTEGER };
+  }
+
+  private formatBudgetForLog(budget: DiscussionBudget): Record<string, string | number | boolean> {
+    return {
+      maxRoundsPerWorker: budget.maxRoundsPerWorker === Number.MAX_SAFE_INTEGER ? "unlimited" : budget.maxRoundsPerWorker,
+      maxDistinctProposals: budget.maxDistinctProposals,
+      safetyLimitEnabled: budget.safetyLimitEnabled,
+    };
+  }
+
+  private refreshEffectiveBudgetForResume(safetyLimitEnabled?: boolean): void {
+    if (!this.baseBudget) return;
+    if (safetyLimitEnabled !== undefined) {
+      this.baseBudget = { ...this.baseBudget, safetyLimitEnabled };
+    }
+    const effectiveBudget = this.toEffectiveBudget(this.baseBudget);
+    this.evalBudget = effectiveBudget;
+    this.effectiveGoalTimeoutMs = this.baseBudget.safetyLimitEnabled ? this.baseGoalTimeoutMs : Infinity;
+    for (const worker of this.budgetInjectableWorkers) worker.setDiscussionBudget(effectiveBudget);
+    console.log("[budget] resume effective", this.formatBudgetForLog(effectiveBudget));
+  }
 
   /** 진행 중인 continuation loop를 중단 (새 세션 시작 시 호출) */
   terminate(): void {
@@ -470,9 +500,9 @@ export class LiveOrchestrator {
 
     // safetyLimitEnabled=false → worker의 spokenAt 한도(maxRoundsPerWorker)도 해제
     // maxRoundsPerWorker=20 그대로두면 20라운드 후 모든 worker가 bail → round 완료 불가
-    const effectiveBudget: DiscussionBudget = budget.safetyLimitEnabled
-      ? budget
-      : { ...budget, maxRoundsPerWorker: Number.MAX_SAFE_INTEGER };
+    this.baseBudget = { ...budget };
+    this.budgetInjectableWorkers = [];
+    const effectiveBudget = this.toEffectiveBudget(this.baseBudget);
 
     // Provider 상태 스냅샷 로그 (버그 추적용)
     console.log("[providers] settings snapshot:", {
@@ -480,10 +510,7 @@ export class LiveOrchestrator {
       claude: { enabled: providers.claude.enabled, hasKey: !!providers.claude.apiKey, model: providers.claude.model },
       gemini: { enabled: providers.gemini.enabled, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model },
     });
-    console.log("[budget] effective", {
-      maxRoundsPerWorker: effectiveBudget.maxRoundsPerWorker === Number.MAX_SAFE_INTEGER ? "unlimited" : effectiveBudget.maxRoundsPerWorker,
-      safetyLimitEnabled: budget.safetyLimitEnabled,
-    });
+    console.log("[budget] effective", this.formatBudgetForLog(effectiveBudget));
 
     type WorkerHandle = { handle: (rev: Revision, id: number | null) => Promise<void> };
     const workerEntries: Array<{ name: string; author: string; worker: WorkerHandle; isMock: boolean }> = [];
@@ -496,6 +523,7 @@ export class LiveOrchestrator {
         : new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, effectiveBudget, providers.gpt.model);
       if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
       if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
       workerEntries.push({ name: isMock ? "GPT (Mock)" : "GPT", author: "gpt", worker: w, isMock });
     } else {
       console.log("[provider] skipping worker", { provider: "gpt", enabled: false });
@@ -509,6 +537,7 @@ export class LiveOrchestrator {
         : new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, effectiveBudget, providers.claude.model);
       if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
       if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
       workerEntries.push({ name: isMock ? "Claude (Mock)" : "Claude", author: "claude", worker: w, isMock });
     } else {
       console.log("[provider] skipping worker", { provider: "claude", enabled: false });
@@ -522,6 +551,7 @@ export class LiveOrchestrator {
         : new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, effectiveBudget, providers.gemini.model);
       if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
       if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
+      if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
       workerEntries.push({ name: isMock ? "Gemini (Mock)" : "Gemini", author: "gemini", worker: w, isMock });
     } else {
       console.log("[provider] skipping worker", { provider: "gemini", enabled: false });
@@ -755,7 +785,8 @@ export class LiveOrchestrator {
     const goalTimeoutMs = isRealApi ? 90_000 : 20_000;
     // safetyLimitEnabled=false → goal timeout 무제한 (main hard timeout에 의존)
     const effectiveGoalTimeoutMs = budget.safetyLimitEnabled ? goalTimeoutMs : Infinity;
-    this.effectiveGoalTimeoutMs  = goalTimeoutMs; // 재개 시 continuation loop에서 재사용
+    this.baseGoalTimeoutMs       = goalTimeoutMs;
+    this.effectiveGoalTimeoutMs  = effectiveGoalTimeoutMs; // 재개 시 continuation loop에서 재사용
 
     // ── 초기 goal 실행 루프 ───────────────────────────────────────────
     for (const goal of goals) {
@@ -843,8 +874,9 @@ export class LiveOrchestrator {
    * - subscribe 콜백은 setupWorkers에서 이미 등록됨 — workers 재등록 불필요
    * - 새 continuation loop를 백그라운드 task로 시작
    */
-  private resumeFromStop(): void {
-    console.log("[live] reopening stopped discussion as new segment");
+  private resumeFromStop(safetyLimitEnabled?: boolean): void {
+    console.log("[live] reopening stopped discussion as new segment", { safetyLimitEnabled });
+    this.refreshEffectiveBudgetForResume(safetyLimitEnabled);
     this.isStopped   = false;
     this.terminated  = false;
     this.activeRunId = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -855,13 +887,15 @@ export class LiveOrchestrator {
     );
   }
 
-  interject(message: string): void {
+  interject(message: string, options: { safetyLimitEnabled?: boolean } = {}): void {
+    console.log("[live] interject options", { safetyLimitEnabled: options.safetyLimitEnabled });
     if (this.isStopped) {
       // 토론이 종료됐어도 새 segment로 재개 — run/topic 종료를 분리
       this.interjectQueue.push(message);
-      this.resumeFromStop();
+      this.resumeFromStop(options.safetyLimitEnabled);
       return;
     }
+    this.refreshEffectiveBudgetForResume(options.safetyLimitEnabled);
     this.interjectQueue.push(message);
     // 큐에만 추가하고 continuation loop에서 처리한다.
     // 여기서 직접 flushInterjections()를 호출하면 loop가 queue를 볼 수 없어

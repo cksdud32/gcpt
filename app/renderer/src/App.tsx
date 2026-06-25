@@ -137,7 +137,7 @@ declare global {
         consensusMode?: ConsensusMode;
         safetyLimitEnabled?: boolean;
       }) => Promise<{ ok: boolean; error?: string }>;
-      sendInterjection:    (message: string) => Promise<{ ok: boolean }>;
+      sendInterjection:    (payload: { message: string; safetyLimitEnabled?: boolean }) => Promise<{ ok: boolean }>;
       stopDiscussion:      ()                     => Promise<{ ok: boolean }>;
       acceptConsensus:     ()                     => Promise<{ ok: boolean }>;
       selectProposal:      (revisionId: number)  => Promise<{ ok: boolean }>;
@@ -1263,7 +1263,8 @@ export default function App() {
 
   // interjection 전송 — 세션 활성 여부 확인 후 live view 재활성화
   async function handleInterjection(msg: string) {
-    const res = await window.api.sendInterjection(msg);
+    console.log("[renderer] interjection payload", { safetyLimitEnabled });
+    const res = await window.api.sendInterjection({ message: msg, safetyLimitEnabled });
     if (!res.ok) {
       console.warn("[renderer] interjection ignored — no active session");
       return;

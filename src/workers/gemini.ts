@@ -229,13 +229,19 @@ export class RealGeminiWorker {
 
   setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
   setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  setDiscussionBudget(budget: DiscussionBudget): void {
+    const rounds = budget.maxRoundsPerWorker;
+    this.maxPerTopic          = rounds;
+    this.maxDistinctProposals = budget.maxDistinctProposals;
+    this.maxPerRun            = rounds === Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : Math.max(8, rounds * 3);
+  }
   private phaseNote(): string {
     return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
   }
 
-  private readonly maxPerTopic:          number;
-  private readonly maxPerRun:            number;
-  private readonly maxDistinctProposals: number;
+  private maxPerTopic:          number;
+  private maxPerRun:            number;
+  private maxDistinctProposals: number;
 
   constructor(
     private apiKey: string,

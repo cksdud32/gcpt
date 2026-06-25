@@ -90,13 +90,17 @@ CRITICAL LANGUAGE RULE — strictly follow:
 export class RealClaudeWorker {
   private client: Anthropic;
   private spokenAt = new Map<number, number>();
-  private readonly maxPerTopic:          number;
-  private readonly maxDistinctProposals: number;
+  private maxPerTopic:          number;
+  private maxDistinctProposals: number;
   private phaseInstruction = "";
   private memoryContext    = "";
 
   setPhaseInstruction(s: string): void { this.phaseInstruction = s; }
   setMemoryContext(ctx: string):   void { this.memoryContext    = ctx; }
+  setDiscussionBudget(budget: import("../types.js").DiscussionBudget): void {
+    this.maxPerTopic          = budget.maxRoundsPerWorker;
+    this.maxDistinctProposals = budget.maxDistinctProposals;
+  }
   private phaseNote(): string {
     return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
   }
