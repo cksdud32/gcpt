@@ -2305,7 +2305,7 @@ function TimelinePanel({ revisions, totalCount, isFiltered, selectedRevId, onRev
     : `변경 기록 (${totalCount})`;
 
   return (
-    <div className="panel">
+    <div className="panel timeline-panel">
       <div className="panel-title">
         {title}
         {isFiltered && <span className="panel-filter-badge">필터 중</span>}
