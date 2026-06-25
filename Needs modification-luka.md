@@ -2,11 +2,11 @@
 
 작성일: 2026-06-25
 
-최근 UI 수정 반영일: 2026-06-25
+최근 수정 반영일: 2026-06-25
 
 ## 요약
 
-현재 GCPT에서 가장 큰 혼동 지점은 실시간 모드와 데모/목업 실행 경계가 사용자에게 충분히 명확하지 않다는 점입니다. 특히 live mode가 꺼져 있거나 API 키가 빠진 provider가 있을 때 `Option-A`, `Option-B`, `Alt-X`, `Alt-Y` 같은 테스트용 값이 실제 AI 토론 결과처럼 보일 수 있습니다.
+현재 GCPT에서 가장 큰 남은 혼동 지점은 provider/API fallback 경계입니다. 데모 표시, 안전 한도 resume 동작, 자동/수동 수렴 라벨 구분은 보강했지만, API 키가 빠진 provider의 mock worker fallback 등은 아직 별도 수정이 필요합니다.
 
 빌드와 테스트는 통과했지만, 아래 항목들은 제품 동작상 혼동 또는 디버깅 위험을 만들 수 있어 수정이 필요합니다.
 
@@ -16,7 +16,9 @@
 - `npm run app:build` 통과
 - `npm test` 통과
 
-## 이번에 반영한 UI 수정
+## 완료된 수정
+
+### 완료: 데모/목업 결과 UI 표시 개선
 
 범위:
 
@@ -27,22 +29,85 @@
 
 반영 내용:
 
-- 데모/목업 결과 판정에서 `accumulated` 결과를 무조건 데모로 취급하던 오탐 가능성을 줄였습니다.
-- 이제 데모 판정은 명시적인 mock/custom mode 또는 테스트용 placeholder 값 감지를 기준으로 합니다.
-- `Option-A`, `Option-B`, `Option-C`, `Alt-X`, `Alt-Y`, `Alt-Z`가 감지되면 데모/테스트용 선택지 경고가 유지됩니다.
-- `DiscussionPanel`의 memo dependency에 `isLiveSession`을 추가해 live/mock 상태 전환 표시가 stale하게 남을 가능성을 줄였습니다.
+- [x] 데모/목업 결과 판정에서 `accumulated` 결과를 무조건 데모로 취급하던 오탐 가능성을 줄였습니다.
+- [x] 데모 판정을 명시적인 mock/custom mode 또는 테스트용 placeholder 값 감지 기준으로 변경했습니다.
+- [x] `Option-A`, `Option-B`, `Option-C`, `Alt-X`, `Alt-Y`, `Alt-Z`가 감지되면 데모/테스트용 선택지 경고가 유지됩니다.
+- [x] `DiscussionPanel`의 memo dependency에 `isLiveSession`을 추가해 live/mock 상태 전환 표시가 stale하게 남을 가능성을 줄였습니다.
+
+관련 커밋:
+
+- `a6c4d80 fix: clarify demo result UI state`
+
+### 완료: 안전 한도 토글 resume/interjection 반영
+
+문제:
+
+안전 한도 체크를 해제해도, 이미 멈춘 live 토론을 추가 의견으로 재개하면 기존 budget이 재사용되어 `safetyLimitEnabled=true`가 계속 남을 수 있었습니다. 이 때문에 체크박스가 꺼져 있어도 “안전 한도에 도달했습니다”가 다시 표시될 수 있었습니다.
+
+반영 내용:
+
+- [x] renderer의 추가 의견 전송 payload에 현재 `safetyLimitEnabled` 값을 포함했습니다.
+- [x] `discussion:interject` IPC가 `{ message, safetyLimitEnabled }` payload를 받도록 변경했습니다.
+- [x] `LiveOrchestrator.interject()` / resume 경로에서 현재 safety limit 값을 받아 base/effective budget을 갱신하도록 수정했습니다.
+- [x] safety limit OFF 시 resumed segment에서도 `maxRoundsPerWorker`가 `unlimited`로 적용되도록 evaluator와 worker budget을 갱신했습니다.
+- [x] fresh live run, interjection, resume effective budget 로그를 추가했습니다.
 
 변경 파일:
 
 - `app/renderer/src/App.tsx`
-- `Needs modification-luka.md`
+- `app/preload/index.ts`
+- `app/main/index.ts`
+- `src/live-orchestrator.ts`
+- `src/orchestrator.ts`
+- `src/workers/gpt.ts`
+- `src/workers/claude.ts`
+- `src/workers/gemini.ts`
 
-남은 항목:
+검증:
 
-- live 실행에서 API 키 없는 provider가 mock worker로 섞일 수 있는 문제는 아직 engine/provider 쪽 수정이 필요합니다.
-- workspace chat/plan fallback 표시 개선은 아직 별도 작업으로 남아 있습니다.
-- Claude parse fail raw logging 축소도 아직 별도 작업으로 남아 있습니다.
-- 한국어 open-ended prompt 분류 개선은 아직 별도 설계가 필요합니다.
+- `npm run build` 통과
+- `npm test` 통과
+
+관련 커밋:
+
+- `8bf6026 fix: apply safety limit toggle to resumed discussions`
+
+### 완료: 자동 수렴/수동 채택/분석 신뢰도 라벨 분리
+
+문제:
+
+자동 수렴, 수동 채택, 직접 선택이 모두 `consensus_reached`로 표시되어 UI에서 구분하기 어려웠습니다. 또한 `안정 수렴 87%`처럼 보이는 값은 실제 evaluator confidence가 아니라 `analyzeDiscussion` / `finalResolution`에서 계산된 분석 신뢰도였기 때문에, 사용자가 실제 자동 수렴 confidence로 오해할 수 있었습니다.
+
+반영 내용:
+
+- [x] `ConsensusReachedPayload`에 optional metadata를 추가했습니다.
+  - `convergenceSource?: "auto_evaluator" | "manual_policy" | "manual_select"`
+  - `confidenceKind?: "analysis" | "evaluator"`
+  - `isMockAffected?: boolean`
+- [x] `LiveOrchestrator`가 자동 수렴, 수동 최고점 채택, 직접 선택마다 `convergenceSource`를 기록하도록 했습니다.
+- [x] `RevisionStore`가 optional convergence metadata를 `selectedOption`에 보존하도록 했습니다.
+- [x] 기존 저장 세션은 metadata가 없어도 `rationale` 문자열을 fallback으로 사용해 자동/수동/직접 선택을 구분합니다.
+- [x] UI에서 `자동 수렴`, `수동 채택`, `직접 선택` 라벨을 분리했습니다.
+- [x] 결과 카드의 퍼센트 표기를 `분석 신뢰도 XX%`로 바꿔 실제 auto-convergence confidence와 구분했습니다.
+- [x] AI 토론 패널에도 데모 배지를 표시해 mock/demo consensus가 live real consensus처럼 보이지 않도록 했습니다.
+
+변경 파일:
+
+- `src/types.ts`
+- `src/live-orchestrator.ts`
+- `src/RevisionStore.ts`
+- `app/renderer/src/App.tsx`
+
+검증:
+
+- `npm run build` 통과
+- `npm test` 통과
+
+관련 커밋:
+
+- `167bfb0 fix: clarify convergence result sources`
+
+## 남은 수정 필요 항목
 
 ## 1. API 키가 없어도 live 실행이 mock worker로 진행될 수 있음
 
@@ -72,6 +137,8 @@
 
 ## 2. 누적 세션 결과가 데모로 오탐지될 수 있음
 
+상태: 완료
+
 위험도: 중간
 
 분류:
@@ -88,10 +155,10 @@
 
 실제 live 결과들이 누적되어 `accumulated` 모드가 된 경우에도 데모처럼 표시될 수 있습니다. 이 문제는 실제 AI 응답에 “데모 모드” 배지가 붙는 잘못된 사용자 경험을 만들 수 있습니다.
 
-권장 수정 방향:
+완료된 수정:
 
-- 데모 여부 판단을 `mode !== "live"`처럼 넓게 잡지 말고, 명시적인 mock/demo 출처 또는 placeholder 감지 결과를 기준으로 분리합니다.
-- `accumulated`는 live/demo와 별도 축으로 취급합니다.
+- [x] 데모 여부 판단을 `mode !== "live"`가 아니라 명시적인 mock/custom mode 또는 placeholder 감지 기준으로 분리했습니다.
+- [x] `accumulated` 결과는 그 자체만으로 데모로 취급하지 않도록 변경했습니다.
 
 ## 3. live mode off 실행은 여전히 mock/demo 토론 엔진을 사용함
 
@@ -113,11 +180,11 @@
 
 이 동작 자체는 의도된 데모 모드일 수 있지만, 사용자에게 충분히 명확하게 표시되지 않으면 실제 AI 판단으로 오해될 수 있습니다.
 
-권장 수정 방향:
+완료된 수정:
 
-- live mode off 상태에서 실행 전후에 “데모 응답으로 실행됩니다” 안내를 표시합니다.
-- 결과 영역, 분석 보기, 변경 기록에 데모 배지를 표시합니다.
-- placeholder-only 결과가 감지되면 별도 경고를 표시합니다.
+- [x] live mode off 상태에서 “실시간 모드가 꺼져 있어 데모 응답으로 실행됩니다.” 안내를 표시합니다.
+- [x] 결과 영역, 분석 보기, 변경 기록에 데모 배지를 표시합니다.
+- [x] placeholder-only 결과가 감지되면 별도 경고를 표시합니다.
 
 ## 4. Claude parse fail 로그가 원문 응답을 그대로 출력함
 
@@ -143,6 +210,8 @@
 
 ## 5. `DiscussionPanel`의 `useMemo` dependency가 누락됨
 
+상태: 완료
+
 위험도: 낮음~중간
 
 분류:
@@ -158,10 +227,9 @@
 
 React memoized value가 최신 live/mock 상태를 반영하지 못할 가능성이 있습니다. 즉시 치명적인 오류가 아닐 수 있지만 상태 전환 UI에서 stale display가 생길 수 있습니다.
 
-권장 수정 방향:
+완료된 수정:
 
-- dependency 배열에 `isLiveSession`을 추가합니다.
-- 관련 memo가 display-only인지, 실행 로직에 영향을 주는지 한 번 더 확인합니다.
+- [x] dependency 배열에 `isLiveSession`을 추가했습니다.
 
 ## 6. 워크스페이스 chat/plan 기능도 mock fallback을 사용함
 
@@ -216,11 +284,9 @@ React memoized value가 최신 live/mock 상태를 반영하지 못할 가능성
 ## 우선순위 제안
 
 1. live 실행에서 API 키 없는 provider가 mock worker로 섞이는 문제를 먼저 수정합니다.
-2. demo/mock detection을 명시적인 출처 기반으로 정리합니다.
-3. workspace chat/plan fallback에도 demo 표시를 추가합니다.
-4. parse fail raw logging을 줄입니다.
-5. `DiscussionPanel` dependency 누락을 수정합니다.
-6. open-ended Korean prompt 처리를 별도 UX 흐름으로 분리합니다.
+2. workspace chat/plan fallback에도 demo 표시를 추가합니다.
+3. parse fail raw logging을 줄입니다.
+4. open-ended Korean prompt 처리를 별도 UX 흐름으로 분리합니다.
 
 ## 수정 시 주의사항
 
