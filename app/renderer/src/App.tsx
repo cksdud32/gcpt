@@ -87,6 +87,61 @@ type FileTreeNode =
   | { type: "file";   name: string; path: string };
 type WorkspaceFallbackReason = "missing_api_key" | "provider_error";
 
+type WorkspaceChangeStatus = "draft" | "debating" | "decided" | "applied" | "failed";
+type WorkspaceSafetyLevel = "safe" | "medium" | "risky";
+type WorkspaceProposalDecision = "support" | "revise" | "reject";
+type WorkspaceDecisionType = "apply_patch" | "needs_user_review" | "reject_change" | "ask_clarification";
+
+type WorkspaceChangeRequest = {
+  id: string;
+  userInstruction: string;
+  status: WorkspaceChangeStatus;
+  createdAt: number;
+};
+
+type AgentCodeProposal = {
+  id: string;
+  agent: "gpt" | "claude" | "gemini" | string;
+  summary: string;
+  affectedFiles: string[];
+  benefits: string[];
+  risks: string[];
+  patchPlan: string[];
+  safetyLevel: WorkspaceSafetyLevel;
+  decision: WorkspaceProposalDecision;
+};
+
+type WorkspaceDecision = {
+  id: string;
+  requestId: string;
+  decisionType: WorkspaceDecisionType;
+  selectedProposalId?: string;
+  summary: string;
+  affectedFiles: string[];
+  patchPlan: string[];
+  riskNotes: string[];
+  rollbackNotes: string[];
+};
+
+type WorkspaceDebateItem = {
+  id: string;
+  actor: string;
+  message: string;
+};
+
+type WorkspaceApplyResult = {
+  status: "idle" | "preview_ready" | "applied" | "blocked" | "failed";
+  summary: string;
+};
+
+type WorkspaceDecisionFlow = {
+  request: WorkspaceChangeRequest;
+  proposals: AgentCodeProposal[];
+  debateTimeline: WorkspaceDebateItem[];
+  decision: WorkspaceDecision;
+  applyResult: WorkspaceApplyResult;
+};
+
 declare global {
   interface Window {
     api: {
@@ -234,6 +289,192 @@ function mockEdit(
   }
 
   return { result: content, summary: "지원되지 않는 파일 형식 — 변경 없음" };
+}
+
+// ─── Workspace decision mock flow ─────────────────────────────────
+
+const RISKY_CHANGE_PATTERNS = [
+  "api key", "apikey", ".env", "secret", "token", "auth", "authentication",
+  "filesystem", "file system", "command", "exec", "shell", "orchestration",
+  "agent", "worker", "ipc", "provider", "credential",
+];
+
+function makeWorkspaceId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function inferWorkspaceSafety(instruction: string, affectedFiles: string[]): WorkspaceSafetyLevel {
+  const lower = instruction.toLowerCase();
+  if (affectedFiles.length > 3 || RISKY_CHANGE_PATTERNS.some(p => lower.includes(p))) return "risky";
+  if (lower.includes("refactor") || lower.includes("architecture") || lower.includes("logic")) return "medium";
+  return "safe";
+}
+
+function decisionLabel(type: WorkspaceDecisionType): string {
+  switch (type) {
+    case "apply_patch":        return "Apply patch";
+    case "needs_user_review":  return "Needs user review";
+    case "reject_change":      return "Reject change";
+    case "ask_clarification":  return "Ask clarification";
+  }
+}
+
+function safetyLabel(level: WorkspaceSafetyLevel): string {
+  switch (level) {
+    case "safe":   return "Safe";
+    case "medium": return "Medium";
+    case "risky":  return "Risky";
+  }
+}
+
+function buildMockWorkspaceFlow(userInstruction: string, selectedFile: string | null): WorkspaceDecisionFlow {
+  const trimmed = userInstruction.trim();
+  const requestId = makeWorkspaceId("wcr");
+  const affectedFiles = selectedFile ? [selectedFile] : [];
+  const safetyLevel = inferWorkspaceSafety(trimmed, affectedFiles);
+  const lower = trimmed.toLowerCase();
+  const isAmbiguous = trimmed.length < 8 || (!selectedFile && !lower.includes("project") && !lower.includes("workspace"));
+  const isRejectable = lower.includes("remove existing feature") || lower.includes("delete feature") || lower.includes("do nothing");
+
+  const primaryDecision: WorkspaceProposalDecision =
+    isAmbiguous || isRejectable || safetyLevel === "risky" ? "revise" : "support";
+
+  const proposals: AgentCodeProposal[] = [
+    {
+      id: "proposal-gpt-small",
+      agent: "gpt",
+      summary: selectedFile
+        ? `Smallest targeted change in ${selectedFile}`
+        : "Clarify the file target before preparing a patch",
+      affectedFiles,
+      benefits: [
+        "Keeps the patch narrow and reversible",
+        "Preserves existing GCPT discussion and consensus behavior",
+      ],
+      risks: affectedFiles.length === 0
+        ? ["No file target selected, so patch scope cannot be verified"]
+        : ["Mock preview may not fully match the user intent until reviewed"],
+      patchPlan: selectedFile
+        ? ["Read selected file", "Create a minimal diff preview", "Apply only after final decision"]
+        : ["Select a file or provide a narrower target", "Regenerate proposals"],
+      safetyLevel: affectedFiles.length === 0 ? "medium" : safetyLevel,
+      decision: primaryDecision,
+    },
+    {
+      id: "proposal-claude-risk",
+      agent: "claude",
+      summary: "Review risk boundaries before editing",
+      affectedFiles,
+      benefits: [
+        "Separates discussion from file modification",
+        "Flags broad or sensitive implementation areas",
+      ],
+      risks: safetyLevel === "risky"
+        ? ["Request touches sensitive functionality and should not auto-apply"]
+        : ["Extra review step may be slower for small UI-only edits"],
+      patchPlan: [
+        "Compare proposed scope against user instruction",
+        "Block automatic writes for risky domains",
+        "Require manual review if scope expands",
+      ],
+      safetyLevel: safetyLevel === "safe" ? "medium" : "risky",
+      decision: safetyLevel === "risky" ? "support" : "revise",
+    },
+    {
+      id: "proposal-gemini-guardrail",
+      agent: "gemini",
+      summary: "Reject unrelated or broad rewrites",
+      affectedFiles,
+      benefits: [
+        "Protects existing features from accidental removal",
+        "Keeps rollback simple",
+      ],
+      risks: ["May reject useful broad changes until the request is more specific"],
+      patchPlan: [
+        "Check whether the request changes unrelated functionality",
+        "Prefer selected-file edits",
+        "Record rejected proposals and reason",
+      ],
+      safetyLevel: "medium",
+      decision: isRejectable ? "support" : "reject",
+    },
+  ];
+
+  let decisionType: WorkspaceDecisionType = "apply_patch";
+  let selectedProposalId: string | undefined = "proposal-gpt-small";
+  let summary = "Agents agree on a narrow patch preview before any file write.";
+
+  if (isAmbiguous) {
+    decisionType = "ask_clarification";
+    selectedProposalId = undefined;
+    summary = "The request is too ambiguous to safely prepare a patch.";
+  } else if (isRejectable) {
+    decisionType = "reject_change";
+    selectedProposalId = "proposal-gemini-guardrail";
+    summary = "The requested change appears unnecessary or harmful without a clearer justification.";
+  } else if (safetyLevel === "risky") {
+    decisionType = "needs_user_review";
+    selectedProposalId = "proposal-claude-risk";
+    summary = "A patch may be possible, but the request touches sensitive or broad behavior.";
+  }
+
+  const request: WorkspaceChangeRequest = {
+    id: requestId,
+    userInstruction: trimmed,
+    status: "decided",
+    createdAt: Date.now(),
+  };
+
+  return {
+    request,
+    proposals,
+    debateTimeline: [
+      {
+        id: "debate-smallest",
+        actor: "Fast Patch Reviewer",
+        message: affectedFiles.length > 0
+          ? "Smallest viable proposal is selected-file only; avoid project-wide rewrites."
+          : "Smallest viable proposal cannot be verified without a file target.",
+      },
+      {
+        id: "debate-safest",
+        actor: "Risk Reviewer",
+        message: safetyLevel === "risky"
+          ? "Sensitive scope detected; automatic patching should pause for review."
+          : "Risk remains low if the patch preview stays limited to the selected file.",
+      },
+      {
+        id: "debate-fit",
+        actor: "Guardrail Reviewer",
+        message: "Final patch should match the user wording and reject unrelated functionality changes.",
+      },
+    ],
+    decision: {
+      id: makeWorkspaceId("wd"),
+      requestId,
+      decisionType,
+      selectedProposalId,
+      summary,
+      affectedFiles,
+      patchPlan: decisionType === "apply_patch"
+        ? ["Generate diff preview from the surviving proposal", "Review changed lines", "Apply using the existing guarded file write"]
+        : ["Do not modify files automatically", "Clarify or review scope", "Regenerate the decision before applying"],
+      riskNotes: [
+        affectedFiles.length > 3 ? "More than three files would require review." : "Current mock plan affects three or fewer files.",
+        safetyLevel === "risky" ? "Sensitive area detected by keyword guardrails." : "No sensitive keyword guardrail triggered.",
+        "Never edit .env files or commit secrets.",
+      ],
+      rollbackNotes: affectedFiles.length > 0
+        ? affectedFiles.map(file => `Rollback ${file} by reverting the generated diff or restoring from version control.`)
+        : ["No rollback target yet because no file is selected."],
+    },
+    applyResult: {
+      status: decisionType === "apply_patch" ? "idle" : "blocked",
+      summary: decisionType === "apply_patch"
+        ? "No files modified. Generate patch preview when ready."
+        : "No files modified. Final decision blocks automatic apply.",
+    },
+  };
 }
 
 // ─── Diff 계산 ────────────────────────────────────────────────────
@@ -1663,7 +1904,7 @@ const HELP_ITEMS = [
     when: "방금 만든 결과를 빠르게 다시 확인할 때 사용하세요.",
   },
   {
-    name: "고급 설정",
+    name: "토론 설정",
     does: "토론 방식, 깊이, 합의 방식, 안전 한도를 조정합니다.",
     when: "더 빠르게 끝내거나 더 깊게 토론시키고 싶을 때 사용하세요.",
   },
@@ -2064,7 +2305,7 @@ function Sidebar({ modes, selected, passMap, onSelect,
       </section>
 
       <details className="discussion-settings">
-        <summary title="토론 방식, 깊이, 합의 방식을 조정하는 고급 설정입니다.">고급 설정</summary>
+        <summary title="토론 방식, 깊이, 합의 방식을 조정하는 토론 설정입니다.">토론 설정</summary>
 
         <div className="disc-mode-section">
           <div className="sidebar-title">대화 방식</div>
@@ -2715,9 +2956,84 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
   onStopDiscussion?: () => void;
 }) {
   const [interjectText,  setInterjectText]  = useState("");
+  const [discussionLanguage, setDiscussionLanguage] = useState<"en" | "ko">("ko");
   const interjectRef = useRef<HTMLInputElement>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [deadlockDismissed, setDeadlockDismissed] = useState(false);
+  const dt = {
+    en: {
+      title: "AI Discussion",
+      messageCount: (count: number) => `${count} messages`,
+      running: "Discussion in progress...",
+      selectTopicHint: "Select a topic to show the discussion flow",
+      topic: "Topic",
+      proposal: "Proposal",
+      counter: "Counter",
+      opinion: "Opinion",
+      deadlockDetected: "Deadlock detected",
+      discussionPaused: "Discussion paused",
+      deadlockState: "Deadlock state",
+      stoppedByUser: "The user stopped the discussion",
+      safetyLimitReached: "Safety limit reached",
+      hardTimeout: "Forced protection stop (app limit)",
+      stagnation: "The discussion ended automatically because new arguments were exhausted",
+      softConsensus: "AI participant arguments converged semantically and ended automatically",
+      delayedPause: "Paused due to delayed response",
+      select: "Select",
+      collapse: "Collapse",
+      expandMessages: (count: number) => `Expand ${count} messages`,
+      selectTitle: (value: string) => `Select this proposal: ${value}`,
+      analysisConclusion: "The analysis conclusion is calculated separately.",
+      initialSelection: "Initial selection",
+      decision: "Decision",
+      deadlockCta: "Deadlock detected - continue or stop the discussion",
+      stopDiscussion: "Stop discussion",
+      continueDiscussion: "Continue",
+      logicConverged: "Logic convergence complete",
+      evolvedConsensus: "Evolved consensus",
+      currentDecision: "Current decision",
+      reopenHint: " - enter additional feedback to reopen the discussion",
+      runningPlaceholder: "Enter feedback (e.g. prioritize maintainability over cost)",
+      idlePlaceholder: "Additional feedback / topic for re-discussion...",
+      send: "Send",
+    },
+    ko: {
+      title: "AI 토론",
+      messageCount: (count: number) => `${count}개 발언`,
+      running: "토론 진행 중...",
+      selectTopicHint: "Topic을 선택하면 토론 흐름이 표시됩니다",
+      topic: "Topic",
+      proposal: "제안",
+      counter: "반박",
+      opinion: "의견",
+      deadlockDetected: "교착 감지",
+      discussionPaused: "토론 중지",
+      deadlockState: "교착 상태",
+      stoppedByUser: "사용자가 토론을 중지했습니다",
+      safetyLimitReached: "안전 한도에 도달했습니다",
+      hardTimeout: "강제 보호 종료됨 (앱 한도)",
+      stagnation: "새 논거가 소진되어 토론이 자동 종료되었습니다",
+      softConsensus: "AI 참여자 논거가 의미적으로 수렴하여 자동 종료되었습니다",
+      delayedPause: "응답 지연으로 일시 중지됨",
+      select: "채택",
+      collapse: "접기",
+      expandMessages: (count: number) => `발언 ${count}개 펼치기`,
+      selectTitle: (value: string) => `이 제안을 채택합니다: ${value}`,
+      analysisConclusion: "분석 결론은 별도 계산입니다.",
+      initialSelection: "초기 선택",
+      decision: "결정",
+      deadlockCta: "교착 상태가 감지됐습니다 - 계속 진행하거나 토론을 중지하세요",
+      stopDiscussion: "토론 중지",
+      continueDiscussion: "계속 진행",
+      logicConverged: "논리 수렴 완료",
+      evolvedConsensus: "진화된 합의",
+      currentDecision: "현재 결론",
+      reopenHint: " - 추가 의견을 입력하면 토론이 다시 열립니다",
+      runningPlaceholder: "의견 입력 (예: 비용보다 유지보수 우선)",
+      idlePlaceholder: "추가 의견 / 재토론 주제 입력...",
+      send: "보내기",
+    },
+  }[discussionLanguage];
 
   function toggleGroup(key: string) {
     setExpandedGroups(prev => {
@@ -2778,10 +3094,10 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
     : null;
 
   const hint = liveRunning
-    ? "토론 진행 중..."
+    ? dt.running
     : selectedTopicIdx !== null && result
-    ? `Topic: ${result.topics[selectedTopicIdx]?.goal ?? ""}`
-    : "Topic을 선택하면 토론 흐름이 표시됩니다";
+    ? `${dt.topic}: ${result.topics[selectedTopicIdx]?.goal ?? ""}`
+    : dt.selectTopicHint;
 
   // 입력창 표시 조건: live 진행 중 OR 이전 live 세션 결과 있음
   const showInput = !!(liveRunning || isLiveSession);
@@ -2820,10 +3136,26 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
   return (
     <div className="panel discussion-panel">
       <div className="panel-title">
-        AI 토론
+        {dt.title}
         {demoMeta.isDemo && <DemoModeBadge compact />}
-        {msgs.length > 0 && <span className="panel-hint">{msgs.length}개 발언</span>}
+        {msgs.length > 0 && <span className="panel-hint">{dt.messageCount(msgs.length)}</span>}
         {liveStatus && <span className="disc-live-status">{liveStatus}</span>}
+        <div className="disc-language-toggle" aria-label="Discussion language">
+          <button
+            className={discussionLanguage === "en" ? "active" : ""}
+            onClick={() => setDiscussionLanguage("en")}
+            type="button"
+          >
+            EN
+          </button>
+          <button
+            className={discussionLanguage === "ko" ? "active" : ""}
+            onClick={() => setDiscussionLanguage("ko")}
+            type="button"
+          >
+            KO
+          </button>
+        </div>
       </div>
       <div className="panel-body discussion-body">
         {items.length === 0 ? (
@@ -2851,9 +3183,9 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
                         <div key={rev.id} className={`disc-msg${isCounter ? "" : ""}`}>
                           <div className="disc-header">
                             <span className="disc-actor" style={{ color: meta.color }}>{meta.label}</span>
-                            <span className="disc-badge">{isCounter ? "반박" : "제안"}</span>
+                            <span className="disc-badge">{isCounter ? dt.counter : dt.proposal}</span>
                             {showSelectBtn && (
-                              <button className="disc-select-btn" onClick={() => onSelectProposal!(rev.id)} title={`이 제안을 채택합니다: ${rp.value}`}>채택</button>
+                              <button className="disc-select-btn" onClick={() => onSelectProposal!(rev.id)} title={dt.selectTitle(rp.value)}>{dt.select}</button>
                             )}
                           </div>
                           <div className="disc-value">{rp.value}</div>
@@ -2861,21 +3193,21 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
                         </div>
                       );
                     })}
-                    <button className="disc-group-toggle" onClick={() => toggleGroup(g.key)}>▲ 접기</button>
+                    <button className="disc-group-toggle" onClick={() => toggleGroup(g.key)}>▲ {dt.collapse}</button>
                   </>
                 ) : (
                   <div className="disc-msg disc-group-collapsed">
                     <div className="disc-header">
                       <span className="disc-actor" style={{ color: meta.color }}>{meta.label}</span>
-                      <span className="disc-badge">{isCounter ? "반박" : "제안"}</span>
+                      <span className="disc-badge">{isCounter ? dt.counter : dt.proposal}</span>
                       <span className="disc-group-count">×{g.revs.length}</span>
                       {showGroupSelectBtn && (
-                        <button className="disc-select-btn" onClick={() => onSelectProposal!(latestRevId)} title={`이 제안을 채택합니다: ${g.displayValue}`}>채택</button>
+                        <button className="disc-select-btn" onClick={() => onSelectProposal!(latestRevId)} title={dt.selectTitle(g.displayValue)}>{dt.select}</button>
                       )}
                     </div>
                     <div className="disc-value">{g.displayValue}</div>
                     {g.latestReason && <div className="disc-reason">{g.latestReason}</div>}
-                    <button className="disc-group-toggle" onClick={() => toggleGroup(g.key)}>▾ 발언 {g.revs.length}개 펼치기</button>
+                    <button className="disc-group-toggle" onClick={() => toggleGroup(g.key)}>▾ {dt.expandMessages(g.revs.length)}</button>
                   </div>
                 )}
               </div>
@@ -2897,20 +3229,20 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
           const consensusSource = isConsensus ? getConsensusSourceFromRevision(rev) : undefined;
           const badgeLabel =
             isConsensus    ? getConsensusSourceLabel(consensusSource) :
-            isDeadlock     ? "교착 감지" :
-            isPaused       ? "토론 중지" :
-            isInterjection ? "의견"     :
-            isCounter      ? "반박"     : "제안";
+            isDeadlock     ? dt.deadlockDetected :
+            isPaused       ? dt.discussionPaused :
+            isInterjection ? dt.opinion     :
+            isCounter      ? dt.counter     : dt.proposal;
 
           const displayValue =
-            isDeadlock     ? (p.reason as string ?? "교착 상태") :
+            isDeadlock     ? (p.reason as string ?? dt.deadlockState) :
             isPaused       ? (
-              (p as Record<string, unknown>).reason === "user_stop"       ? "사용자가 토론을 중지했습니다" :
-              (p as Record<string, unknown>).reason === "safety_limit"    ? "안전 한도에 도달했습니다" :
-              (p as Record<string, unknown>).reason === "hard_timeout"    ? "강제 보호 종료됨 (앱 한도)" :
-              (p as Record<string, unknown>).reason === "stagnation"      ? "새 논거가 소진되어 토론이 자동 종료되었습니다" :
-              (p as Record<string, unknown>).reason === "soft_consensus"  ? "AI 참여자 논거가 의미적으로 수렴하여 자동 종료되었습니다" :
-                                                                            "응답 지연으로 일시 중지됨"
+              (p as Record<string, unknown>).reason === "user_stop"       ? dt.stoppedByUser :
+              (p as Record<string, unknown>).reason === "safety_limit"    ? dt.safetyLimitReached :
+              (p as Record<string, unknown>).reason === "hard_timeout"    ? dt.hardTimeout :
+              (p as Record<string, unknown>).reason === "stagnation"      ? dt.stagnation :
+              (p as Record<string, unknown>).reason === "soft_consensus"  ? dt.softConsensus :
+                                                                            dt.delayedPause
             ) :
             isInterjection ? (p.message as string ?? "") :
             isConsensus    ? (evoConclusion ?? (p.selected as string ?? "")) :
@@ -2918,8 +3250,8 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
 
           const displayReason = isConsensus
             ? evoConclusion
-              ? `${getConsensusSourceDescription(consensusSource)} 분석 결론은 별도 계산입니다. 초기 선택: ${p.selected as string ?? ""} — ${p.winner ?? ""}`
-              : `${getConsensusSourceDescription(consensusSource)} 결정: ${p.winner ?? ""}`
+              ? `${getConsensusSourceDescription(consensusSource)} ${dt.analysisConclusion} ${dt.initialSelection}: ${p.selected as string ?? ""} - ${p.winner ?? ""}`
+              : `${getConsensusSourceDescription(consensusSource)} ${dt.decision}: ${p.winner ?? ""}`
             : (!isInterjection && !isDeadlock && !isPaused ? (p.reason as string ?? "") : "");
 
           const showSelectBtn =
@@ -2941,9 +3273,9 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
                   <button
                     className="disc-select-btn"
                     onClick={() => onSelectProposal!(rev.id)}
-                    title={`이 제안을 채택합니다: ${displayValue}`}
+                    title={dt.selectTitle(displayValue)}
                   >
-                    채택
+                    {dt.select}
                   </button>
                 )}
               </div>
@@ -2955,10 +3287,10 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
       </div>
       {hasActiveDeadlock && !deadlockDismissed && (
         <div className="disc-deadlock-cta">
-          <span className="disc-deadlock-cta-msg">교착 상태가 감지됐습니다 — 계속 진행하거나 토론을 중지하세요</span>
+          <span className="disc-deadlock-cta-msg">{dt.deadlockCta}</span>
           <div className="disc-deadlock-cta-btns">
-            <button className="disc-deadlock-stop-btn" onClick={() => onStopDiscussion?.()}>토론 중지</button>
-            <button className="disc-deadlock-continue-btn" onClick={() => setDeadlockDismissed(true)}>계속 진행</button>
+            <button className="disc-deadlock-stop-btn" onClick={() => onStopDiscussion?.()}>{dt.stopDiscussion}</button>
+            <button className="disc-deadlock-continue-btn" onClick={() => setDeadlockDismissed(true)}>{dt.continueDiscussion}</button>
           </div>
         </div>
       )}
@@ -2969,22 +3301,22 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
             <div className="disc-decided-hint">
               {topicAnalysis?.convergenceFreeze?.frozen ? (
                 <>
-                  <span className="disc-freeze-badge">논리 수렴 완료</span>
+                  <span className="disc-freeze-badge">{dt.logicConverged}</span>
                   {evoConclusion && <strong>{evoConclusion}</strong>}
                 </>
               ) : evoConclusion ? (
-                <>진화된 합의: <strong>{evoConclusion}</strong></>
+                <>{dt.evolvedConsensus}: <strong>{evoConclusion}</strong></>
               ) : (
-                <>✔ 현재 결론: <strong>{decidedValue}</strong></>
+                <>{dt.currentDecision}: <strong>{decidedValue}</strong></>
               )}
-              <span className="disc-decided-hint-sub"> — 추가 의견을 입력하면 토론이 다시 열립니다</span>
+              <span className="disc-decided-hint-sub">{dt.reopenHint}</span>
             </div>
           )}
           <div className="disc-interject">
             <input
               ref={interjectRef}
               className="disc-interject-input"
-              placeholder={liveRunning ? "의견 입력 (예: 비용보다 유지보수 우선)" : "추가 의견 / 재토론 주제 입력..."}
+              placeholder={liveRunning ? dt.runningPlaceholder : dt.idlePlaceholder}
               value={interjectText}
               onChange={e => setInterjectText(e.target.value)}
               onKeyDown={e => {
@@ -2998,7 +3330,7 @@ function DiscussionPanel({ result, demoMeta, selectedTopicIdx, liveStatus, liveR
               onClick={sendInterjection}
               disabled={!interjectText.trim() || liveRunning}
             >
-              {liveRunning ? "..." : "보내기"}
+              {liveRunning ? "..." : dt.send}
             </button>
           </div>
         </div>
@@ -3299,6 +3631,494 @@ function WsChatPanel({ messages, linkedTopic, provider, plan, planBusy, busy, on
   );
 }
 
+// ─── Code Decision Workspace ─────────────────────────────────────
+
+function CodeDecisionWorkspace({ flow: syncedFlow, linkedTopic, selectedFile, original, proposed, onCreateRequest, onCreatePatchPreview, onResetDecision }: {
+  flow: WorkspaceDecisionFlow | null;
+  linkedTopic?: TopicContext | null;
+  selectedFile: string | null;
+  original: string | null;
+  proposed: string | null;
+  onCreateRequest: (instruction: string) => void;
+  onCreatePatchPreview: (instruction?: string) => void;
+  onResetDecision: () => void;
+}) {
+  const [workspaceLanguage, setWorkspaceLanguage] = useState<"en" | "ko">("en");
+  const [workspaceRequestDraft, setWorkspaceRequestDraft] = useState("");
+  const [workspaceDecisionFlow, setWorkspaceDecisionFlow] = useState<WorkspaceDecisionFlow | null>(null);
+  const [workspaceFeatureStatus, setWorkspaceFeatureStatus] = useState<"idle" | "generated" | "blocked">("idle");
+  const [aiDebateStatus, setAiDebateStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [aiDebateResult, setAiDebateResult] = useState("");
+  const [aiDebateProvider, setAiDebateProvider] = useState<"claude" | "mock" | null>(null);
+  const [aiDebateError, setAiDebateError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const fallbackWorkspaceInstruction = linkedTopic
+    ? `Apply the selected discussion decision: ${linkedTopic.selectedValue}`
+    : selectedFile
+    ? `Review and safely improve ${selectedFile}`
+    : "Design a safe workspace code-change decision flow";
+  const defaultWorkspaceFlow = useMemo(
+    () => buildMockWorkspaceFlow(fallbackWorkspaceInstruction, selectedFile),
+    [fallbackWorkspaceInstruction, selectedFile],
+  );
+  const flow = syncedFlow ?? workspaceDecisionFlow ?? defaultWorkspaceFlow;
+  const selectedProposal = flow.proposals.find(p => p.id === flow.decision.selectedProposalId);
+  const canPreview = flow.decision.decisionType === "apply_patch";
+  const t = {
+    en: {
+      workspace: "Workspace",
+      title: "Code Decision Workspace",
+      target: "Target",
+      noTarget: "select a file for patch preview",
+      userRequest: "User Request",
+      agentProposals: "Agent Proposals",
+      debateTimeline: "Debate Timeline",
+      riskReview: "Risk Review",
+      finalDecision: "Final Decision",
+      patchPreview: "Patch Preview",
+      applyResult: "Apply Result",
+      affectedFiles: "Affected files",
+      noFileSelected: "No file selected",
+      benefit: "Benefit",
+      risk: "Risk",
+      safety: "Safety",
+      decision: "Decision",
+      survived: "Survived",
+      rollbackNotes: "Rollback notes",
+      manualTesting: "Manual testing",
+      manualRecommended: "recommended after apply",
+      manualRequired: "required before apply",
+      previewReady: "Preview ready",
+      generatePatchPreview: "Generate patch preview",
+      applyThroughExistingPath: "Apply through existing Apply path",
+      requestInputTitle: "Write change request",
+      requestInputHint: "Example: reduce workspace card spacing, add a demo mode label, improve the patch preview button",
+      generateDecision: "Generate decision flow",
+      useTopicRequest: "Fill from current selection/topic",
+      emptyRequestWarning: "Write a request before generating a decision flow.",
+      generatedStatus: "A new workspace decision flow was generated.",
+      blockedStatus: "No decision flow was generated because the request is empty.",
+      currentRequest: "Current request",
+      resetDecision: "Reset",
+      noSelectedFileNotice: "Without a selected file, the real patch scope cannot be verified.",
+      aiDebateTitle: "Live AI recommendation",
+      aiDebateDescription: "Ask the configured workspace AI API to review this request and suggest a safe code-change approach.",
+      runAiDebate: "Run AI recommendation",
+      aiDebateLoading: "AI is reviewing the request...",
+      aiDebateReady: "AI recommendation ready",
+      aiDebateFailed: "AI recommendation failed",
+      aiDebateEmpty: "Generate or write a request first, then run the AI recommendation.",
+      aiDebateProvider: "Provider",
+      aiDebateSafeNote: "This does not write files automatically. Review the recommendation before preview/apply.",
+      simulatedProposalNote: "These proposal cards are simulated decision agents. Real API output appears in Live AI recommendation.",
+      showDetails: "Show details",
+      hideDetails: "Hide details",
+      mockPatchWarning: "Patch Preview currently uses the safe mock editor. Live AI recommendation is advisory only.",
+      mockAgentLabels: {
+        gpt: "Fast Patch Reviewer",
+        claude: "Risk Reviewer",
+        gemini: "Guardrail Reviewer",
+      },
+    },
+    ko: {
+      workspace: "워크스페이스",
+      title: "코드 결정 워크스페이스",
+      target: "대상",
+      noTarget: "패치 미리보기를 만들 파일을 선택하세요",
+      userRequest: "사용자 요청",
+      agentProposals: "에이전트 제안",
+      debateTimeline: "토론 타임라인",
+      riskReview: "위험 검토",
+      finalDecision: "최종 결정",
+      patchPreview: "패치 미리보기",
+      applyResult: "적용 결과",
+      affectedFiles: "영향 파일",
+      noFileSelected: "선택된 파일 없음",
+      benefit: "이점",
+      risk: "위험",
+      safety: "안전도",
+      decision: "결정",
+      survived: "선택됨",
+      rollbackNotes: "롤백 메모",
+      manualTesting: "수동 테스트",
+      manualRecommended: "적용 후 권장",
+      manualRequired: "적용 전 필요",
+      previewReady: "미리보기 준비됨",
+      generatePatchPreview: "패치 미리보기 생성",
+      applyThroughExistingPath: "기존 Apply 경로로 적용",
+      requestInputTitle: "변경 요청 작성",
+      requestInputHint: "예: 워크스페이스 카드 여백 줄이기, 데모 모드 라벨 추가, 패치 미리보기 버튼 개선",
+      generateDecision: "결정 흐름 생성",
+      useTopicRequest: "현재 선택/토픽 기반으로 채우기",
+      emptyRequestWarning: "요청 내용을 먼저 입력해야 합니다.",
+      generatedStatus: "새 워크스페이스 결정 흐름이 생성되었습니다.",
+      blockedStatus: "요청이 비어 있어 생성하지 않았습니다.",
+      currentRequest: "현재 요청",
+      resetDecision: "초기화",
+      noSelectedFileNotice: "선택된 파일이 없으면 실제 패치 범위는 검증되지 않습니다.",
+      aiDebateTitle: "실시간 AI 추천",
+      aiDebateDescription: "설정된 워크스페이스 AI API로 요청을 검토하고 안전한 코드 변경 방향을 추천받습니다.",
+      runAiDebate: "AI 추천 실행",
+      aiDebateLoading: "AI가 요청을 검토하는 중입니다...",
+      aiDebateReady: "AI 추천이 준비되었습니다",
+      aiDebateFailed: "AI 추천 실행 실패",
+      aiDebateEmpty: "먼저 요청을 작성하거나 결정 흐름을 생성한 뒤 AI 추천을 실행하세요.",
+      aiDebateProvider: "제공자",
+      aiDebateSafeNote: "이 기능은 파일을 자동 수정하지 않습니다. 추천 내용을 확인한 뒤 Preview/Apply를 사용하세요.",
+      simulatedProposalNote: "이 제안 카드는 시뮬레이션된 결정 에이전트입니다. 실제 API 결과는 실시간 AI 추천에 표시됩니다.",
+      showDetails: "상세 보기",
+      hideDetails: "접기",
+      mockPatchWarning: "현재 Patch Preview는 안전한 mock 편집기를 사용합니다. 실시간 AI 추천은 참고용입니다.",
+      mockAgentLabels: {
+        gpt: "빠른 패치 검토자",
+        claude: "위험 검토자",
+        gemini: "가드레일 검토자",
+      },
+    },
+  }[workspaceLanguage];
+
+  useEffect(() => {
+    setWorkspaceDecisionFlow(null);
+    setWorkspaceFeatureStatus("idle");
+  }, [fallbackWorkspaceInstruction, selectedFile]);
+
+  function fillWorkspaceRequestFromContext() {
+    setWorkspaceRequestDraft(fallbackWorkspaceInstruction);
+    setWorkspaceFeatureStatus("idle");
+  }
+
+  function generateWorkspaceDecisionFlow() {
+    const trimmed = workspaceRequestDraft.trim();
+
+    if (!trimmed) {
+      setWorkspaceFeatureStatus("blocked");
+      return;
+    }
+
+    const nextFlow = buildMockWorkspaceFlow(trimmed, selectedFile);
+    setWorkspaceDecisionFlow(nextFlow);
+    onCreateRequest(trimmed);
+    setWorkspaceFeatureStatus("generated");
+  }
+
+  function resetWorkspaceDecisionFlow() {
+    setWorkspaceRequestDraft("");
+    setWorkspaceDecisionFlow(null);
+    onResetDecision();
+    setWorkspaceFeatureStatus("idle");
+    setAiDebateStatus("idle");
+    setAiDebateResult("");
+    setAiDebateProvider(null);
+    setAiDebateError("");
+  }
+
+  async function runLiveAiRecommendation() {
+    const instruction = workspaceRequestDraft.trim() || flow.request.userInstruction.trim();
+    if (!instruction) {
+      setAiDebateStatus("failed");
+      setAiDebateError(t.aiDebateEmpty);
+      setAiDebateResult("");
+      setAiDebateProvider(null);
+      return;
+    }
+    setAiDebateStatus("loading");
+    setAiDebateError("");
+    setAiDebateResult("");
+    setAiDebateProvider(null);
+    const selectedFileContext = selectedFile
+      ? `Selected file: ${selectedFile}`
+      : "Selected file: none";
+    const selectedFileContent = selectedFile && original
+      ? original.slice(0, 12000)
+      : "No selected file content is currently loaded.";
+    const prompt = [
+      "You are an AI code decision reviewer inside GCPT.",
+      "Your job is to recommend a safe code-change approach, not to write files automatically.",
+      "Compare at least two possible approaches, explain risks, and give a recommended patch plan.",
+      "Do not suggest editing secrets, .env files, API keys, provider credentials, IPC contracts, or file write behavior unless explicitly necessary.",
+      "Keep the answer concise and structured.",
+      "",
+      selectedFileContext,
+      "",
+      `User request: ${instruction}`,
+      "",
+      "Current selected file content preview:",
+      "```",
+      selectedFileContent,
+      "```",
+      "",
+      "Return this structure:",
+      "1. Summary",
+      "2. Suggested approaches",
+      "3. Risk review",
+      "4. Recommended patch plan",
+      "5. Manual test checklist",
+    ].join("\n");
+    try {
+      const response = await window.api.workspaceChat({
+        linkedTopic: linkedTopic ?? undefined,
+        messages: [
+          { role: "user", content: prompt },
+        ],
+      });
+      if (!response.ok) {
+        setAiDebateStatus("failed");
+        setAiDebateError(response.error);
+        return;
+      }
+      setAiDebateStatus("ready");
+      setAiDebateResult(response.content);
+      setAiDebateProvider(response.provider);
+    } catch (error) {
+      setAiDebateStatus("failed");
+      setAiDebateError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function mockAgentLabel(agent: string): string {
+    return t.mockAgentLabels[agent as keyof typeof t.mockAgentLabels] ?? `${agent} Mock`;
+  }
+
+  return (
+    <div className="code-decision-workspace">
+      <div className="cdw-header">
+        <div>
+          <div className="cdw-kicker">{t.workspace}</div>
+          <div className="cdw-title">{t.title}</div>
+        </div>
+        <div className="cdw-header-actions">
+          <div className="cdw-language-toggle" aria-label="Workspace language">
+            <button
+              className={workspaceLanguage === "en" ? "active" : ""}
+              onClick={() => setWorkspaceLanguage("en")}
+              type="button"
+            >
+              EN
+            </button>
+            <button
+              className={workspaceLanguage === "ko" ? "active" : ""}
+              onClick={() => setWorkspaceLanguage("ko")}
+              type="button"
+            >
+              KO
+            </button>
+          </div>
+          <div className="cdw-scope">
+            {t.target}: <span>{selectedFile ?? t.noTarget}</span>
+          </div>
+        </div>
+      </div>
+
+      <section className="cdw-compact-row">
+        <div className="cdw-compact-request">
+          <span className="cdw-compact-label">{t.currentRequest}</span>
+          <span className="cdw-compact-text">{flow.request.userInstruction}</span>
+        </div>
+        <div className="cdw-compact-decision">
+          <span className={`cdw-decision-pill cdw-decision-${flow.decision.decisionType}`}>
+            {decisionLabel(flow.decision.decisionType)}
+          </span>
+          <span className={`cdw-apply-status cdw-apply-${flow.applyResult.status}`}>
+            {flow.applyResult.status.replace("_", " ")}
+          </span>
+        </div>
+        <div className="cdw-compact-actions">
+          <button
+            type="button"
+            onClick={runLiveAiRecommendation}
+            disabled={aiDebateStatus === "loading"}
+          >
+            {aiDebateStatus === "loading" ? t.aiDebateLoading : t.runAiDebate}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setDetailsOpen(prev => !prev)}
+          >
+            {detailsOpen ? t.hideDetails : t.showDetails}
+          </button>
+        </div>
+        <div className={`cdw-ai-status cdw-ai-status-${aiDebateStatus}`}>
+          {aiDebateStatus === "ready"
+            ? `${t.aiDebateReady}${aiDebateProvider ? ` · ${t.aiDebateProvider}: ${aiDebateProvider}` : ""}`
+            : aiDebateStatus === "failed"
+            ? `${t.aiDebateFailed}: ${aiDebateError || t.aiDebateEmpty}`
+            : t.aiDebateSafeNote}
+        </div>
+      </section>
+
+      {detailsOpen && (
+        <div className="cdw-details">
+      <section className="cdw-section cdw-request-builder">
+        <div className="cdw-section-title">{t.requestInputTitle}</div>
+
+        <textarea
+          className="cdw-request-textarea"
+          value={workspaceRequestDraft}
+          onChange={event => {
+            setWorkspaceRequestDraft(event.target.value);
+            if (workspaceFeatureStatus !== "idle") setWorkspaceFeatureStatus("idle");
+          }}
+          placeholder={t.requestInputHint}
+          rows={3}
+        />
+
+        <div className="cdw-request-actions">
+          <button type="button" onClick={generateWorkspaceDecisionFlow}>
+            {t.generateDecision}
+          </button>
+
+          <button type="button" className="secondary" onClick={fillWorkspaceRequestFromContext}>
+            {t.useTopicRequest}
+          </button>
+
+          <button type="button" className="secondary" onClick={resetWorkspaceDecisionFlow}>
+            {t.resetDecision}
+          </button>
+        </div>
+
+        <div className={`cdw-request-status cdw-request-status-${workspaceFeatureStatus}`}>
+          {workspaceFeatureStatus === "generated"
+            ? t.generatedStatus
+            : workspaceFeatureStatus === "blocked"
+            ? t.blockedStatus
+            : selectedFile
+            ? `${t.currentRequest}: ${flow.request.userInstruction}`
+            : `${t.currentRequest}: ${flow.request.userInstruction} · ${t.noSelectedFileNotice}`}
+        </div>
+      </section>
+
+      <section className="cdw-section cdw-ai-debate">
+        <div className="cdw-section-title">{t.aiDebateTitle}</div>
+        <p className="cdw-muted">{t.aiDebateDescription}</p>
+        <div className="cdw-request-actions">
+          <button
+            type="button"
+            onClick={runLiveAiRecommendation}
+            disabled={aiDebateStatus === "loading"}
+          >
+            {aiDebateStatus === "loading" ? t.aiDebateLoading : t.runAiDebate}
+          </button>
+        </div>
+        <div className={`cdw-ai-status cdw-ai-status-${aiDebateStatus}`}>
+          {aiDebateStatus === "ready"
+            ? `${t.aiDebateReady}${aiDebateProvider ? ` · ${t.aiDebateProvider}: ${aiDebateProvider}` : ""}`
+            : aiDebateStatus === "failed"
+            ? `${t.aiDebateFailed}: ${aiDebateError || t.aiDebateEmpty}`
+            : t.aiDebateSafeNote}
+        </div>
+        {aiDebateResult && (
+          <pre className="cdw-ai-result">{aiDebateResult}</pre>
+        )}
+      </section>
+
+        <div className="cdw-grid">
+          <section className="cdw-section cdw-user-request">
+            <div className="cdw-section-title">{t.userRequest}</div>
+            <div className="cdw-request-text">{flow.request.userInstruction}</div>
+            <div className={`cdw-status cdw-status-${flow.request.status}`}>{flow.request.status}</div>
+          </section>
+
+          <section className="cdw-section cdw-proposals">
+            <div className="cdw-section-title">{t.agentProposals}</div>
+            <p className="cdw-helper-note">{t.simulatedProposalNote}</p>
+            <div className="cdw-card-list">
+              {flow.proposals.map(proposal => (
+                <div
+                  key={proposal.id}
+                  className={`cdw-proposal-card ${proposal.id === flow.decision.selectedProposalId ? "survived" : ""}`}
+                >
+                  <div className="cdw-card-head">
+                    <span className={`cdw-agent cdw-agent-${proposal.agent}`}>{mockAgentLabel(proposal.agent)}</span>
+                    <span className={`cdw-safety cdw-safety-${proposal.safetyLevel}`}>
+                      {t.safety}: {safetyLabel(proposal.safetyLevel)}
+                    </span>
+                  </div>
+                  <div className="cdw-proposal-summary">{proposal.summary}</div>
+                  <div className="cdw-mini-label">{t.affectedFiles}</div>
+                  <div className="cdw-file-list-inline">
+                    {proposal.affectedFiles.length > 0 ? proposal.affectedFiles.join(", ") : t.noFileSelected}
+                  </div>
+                  <div className="cdw-mini-label">{t.benefit}</div>
+                  <ul>{proposal.benefits.map(item => <li key={item}>{item}</li>)}</ul>
+                  <div className="cdw-mini-label">{t.risk}</div>
+                  <ul>{proposal.risks.map(item => <li key={item}>{item}</li>)}</ul>
+                  <div className="cdw-mini-label">{t.decision}</div>
+                  <div className={`cdw-proposal-decision cdw-proposal-${proposal.decision}`}>
+                    {proposal.id === flow.decision.selectedProposalId ? t.survived : proposal.decision}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="cdw-section">
+            <div className="cdw-section-title">{t.debateTimeline}</div>
+            <div className="cdw-timeline">
+              {flow.debateTimeline.map(item => (
+                <div key={item.id} className="cdw-timeline-item">
+                  <span>{item.actor}</span>
+                  <p>{item.message}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="cdw-section">
+            <div className="cdw-section-title">{t.riskReview}</div>
+            <ul className="cdw-compact-list">
+              {flow.decision.riskNotes.map(note => <li key={note}>{note}</li>)}
+            </ul>
+          </section>
+
+          <section className="cdw-section cdw-final">
+            <div className="cdw-section-title">{t.finalDecision}</div>
+            <div className={`cdw-decision-pill cdw-decision-${flow.decision.decisionType}`}>
+              {decisionLabel(flow.decision.decisionType)}
+            </div>
+            <p>{flow.decision.summary}</p>
+            {selectedProposal && (
+              <div className="cdw-survivor">
+                {t.survived}: <span>{mockAgentLabel(selectedProposal.agent)}</span> - {selectedProposal.summary}
+              </div>
+            )}
+          </section>
+
+          <section className="cdw-section">
+            <div className="cdw-section-title">{t.patchPreview}</div>
+            <ol className="cdw-compact-list">
+              {flow.decision.patchPlan.map(step => <li key={step}>{step}</li>)}
+            </ol>
+            <div className="cdw-rollback">
+              {t.rollbackNotes}: {flow.decision.rollbackNotes[0]}
+            </div>
+            <div className="cdw-apply-path">{t.applyThroughExistingPath}</div>
+            <div className="cdw-mock-warning">{t.mockPatchWarning}</div>
+            <button
+              onClick={() => onCreatePatchPreview(flow.request.userInstruction)}
+              disabled={!canPreview || proposed !== null}
+            >
+              {proposed !== null ? t.previewReady : t.generatePatchPreview}
+            </button>
+          </section>
+
+          <section className="cdw-section">
+            <div className="cdw-section-title">{t.applyResult}</div>
+            <div className={`cdw-apply-status cdw-apply-${flow.applyResult.status}`}>
+              {flow.applyResult.status.replace("_", " ")}
+            </div>
+            <p>{flow.applyResult.summary}</p>
+            <div className="cdw-manual-test">
+              {t.manualTesting}: {flow.decision.decisionType === "apply_patch" ? t.manualRecommended : t.manualRequired}
+            </div>
+          </section>
+        </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Workspace Editor ─────────────────────────────────────────────
 
 function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
@@ -3323,6 +4143,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
   const [wsChatProvider, setWsChatProvider] = useState<"claude" | "mock" | null>(null);
   const [wsPlan,         setWsPlan]         = useState<WorkspacePlan | null>(null);
   const [planBusy,       setPlanBusy]       = useState(false);
+  const [decisionFlow,   setDecisionFlow]   = useState<WorkspaceDecisionFlow | null>(null);
   const wsChatMsgId      = useRef(0);
   const prevProviderRef  = useRef<"claude" | "mock" | null>(null);
 
@@ -3353,6 +4174,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
       workspacePath: wp,
       selectedFile: null, original: null, proposed: null, proposeSummary: "",
     }));
+    setDecisionFlow(null);
     clearWsLog();
     showStatus("스캔 중...", "info");
     setBusy(true);
@@ -3376,6 +4198,7 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
   async function selectFile(rel: string) {
     if (!workspacePath) return;
     setWsState(prev => ({ ...prev, selectedFile: rel, original: null, proposed: null, proposeSummary: "" }));
+    setDecisionFlow(null);
     showStatus("파일 읽는 중...", "info");
     const res = await window.api.readWorkspaceFile(workspacePath, rel);
     if (!res.ok) { showStatus(res.error, "err"); return; }
@@ -3388,6 +4211,13 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
     const res = mockEdit(selectedFile, original);
     if ("error" in res) { showStatus(res.error, "err"); return; }
     setWsState(prev => ({ ...prev, proposed: res.result, proposeSummary: res.summary }));
+    setDecisionFlow(prev => prev ? {
+      ...prev,
+      applyResult: {
+        status: "preview_ready",
+        summary: `Patch preview generated for ${selectedFile}. No file has been modified yet.`,
+      },
+    } : prev);
     addWsLog({
       type: "file_edit_proposed",
       relativePath: selectedFile,
@@ -3410,6 +4240,14 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
     if (!res.ok) { showStatus(res.error, "err"); return; }
     const saved = proposed;
     setWsState(prev => ({ ...prev, original: saved, proposed: null, proposeSummary: "" }));
+    setDecisionFlow(prev => prev ? {
+      ...prev,
+      request: { ...prev.request, status: "applied" },
+      applyResult: {
+        status: "applied",
+        summary: `Applied final agreed patch to ${selectedFile}. Manual testing is still recommended.`,
+      },
+    } : prev);
     addWsLog({
       type: "file_edit_applied",
       relativePath: selectedFile,
@@ -3517,6 +4355,36 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
     });
   }
 
+  function handleCreateDecisionRequest(instruction: string) {
+    const flow = buildMockWorkspaceFlow(instruction, selectedFile);
+    setDecisionFlow(flow);
+    if (flow.decision.decisionType === "apply_patch") {
+      showStatus("최종 결정: 안전한 patch preview 생성 가능", "ok");
+    } else {
+      showStatus(`최종 결정: ${decisionLabel(flow.decision.decisionType)}`, "info");
+    }
+  }
+
+  function handleCreatePatchPreview(instruction?: string) {
+    const activeFlow = decisionFlow ?? buildMockWorkspaceFlow(
+      instruction ?? linkedTopic?.selectedValue ?? selectedFile ?? "Design a safe workspace code-change decision flow",
+      selectedFile,
+    );
+    if (!decisionFlow) setDecisionFlow(activeFlow);
+    if (activeFlow.decision.decisionType !== "apply_patch") {
+      setDecisionFlow(prev => prev ? {
+        ...prev,
+        applyResult: {
+          status: "blocked",
+          summary: "Final decision does not allow automatic patch preview.",
+        },
+      } : prev);
+      showStatus("최종 결정이 apply_patch가 아니므로 preview를 만들 수 없습니다", "err");
+      return;
+    }
+    proposeEdit();
+  }
+
   const diff = useMemo(
     () => original !== null && proposed !== null ? computeDiff(original, proposed) : null,
     [original, proposed],
@@ -3562,6 +4430,17 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
             : "폴더를 선택하면 파일 목록이 표시됩니다"}
         </span>
       </div>
+
+      <CodeDecisionWorkspace
+        flow={decisionFlow}
+        linkedTopic={linkedTopic}
+        selectedFile={selectedFile}
+        original={original}
+        proposed={proposed}
+        onCreateRequest={handleCreateDecisionRequest}
+        onCreatePatchPreview={handleCreatePatchPreview}
+        onResetDecision={() => setDecisionFlow(null)}
+      />
 
       {/* Body */}
       <div className="ws-body">
@@ -3689,10 +4568,11 @@ function WorkspaceEditor({ wsState, setWsState, wsLog, addWsLog, clearWsLog,
       <div className="ws-footer">
         <button
           className="primary"
-          onClick={proposeEdit}
-          disabled={busy || original === null}
+          onClick={() => handleCreatePatchPreview()}
+          disabled={busy || original === null || decisionFlow?.decision.decisionType !== "apply_patch" || proposed !== null}
+          title="Workspace final decision must be apply_patch before preview generation"
         >
-          수정 제안
+          Patch Preview
         </button>
         <button
           onClick={applyEdit}
