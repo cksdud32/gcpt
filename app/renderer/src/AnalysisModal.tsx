@@ -180,13 +180,13 @@ export function AnalysisModal({ goal, analysis, topic, history, onClose }: Props
                   <span>{fullAnalysisOpen ? "▲" : "▼"}</span>
                   세부 분석 데이터 보기
                 </button>
-                {fullAnalysisOpen && <AnalysisBody analysis={analysis} />}
+                {fullAnalysisOpen && <AnalysisBody analysis={analysis} selectedOption={topic.selectedOption} />}
               </div>
             </>
           )}
 
           {/* 세그먼트 탭 또는 단일 세그먼트 */}
-          {!isFullTab && <AnalysisBody analysis={activeAnalysis} />}
+          {!isFullTab && <AnalysisBody analysis={activeAnalysis} selectedOption={topic.selectedOption} />}
 
         </div>
       </div>
@@ -196,7 +196,10 @@ export function AnalysisModal({ goal, analysis, topic, history, onClose }: Props
 
 // ─── AnalysisBody ────────────────────────────────────────────────
 
-function AnalysisBody({ analysis }: { analysis: DiscussionAnalysis }) {
+function AnalysisBody({ analysis, selectedOption }: {
+  analysis: DiscussionAnalysis;
+  selectedOption?: Topic['selectedOption'];
+}) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const {
@@ -252,6 +255,11 @@ function AnalysisBody({ analysis }: { analysis: DiscussionAnalysis }) {
 
       {/* AI들의 공통/반복 구조 */}
       <StructuralAnalysisView analysis={analysis} />
+
+      {/* 최초 합의 — 논리가 처음 수렴한 역사적 지점 */}
+      {selectedOption && (
+        <FirstConsensusSection selectedOption={selectedOption} />
+      )}
 
       {/* ── 고급 분석 데이터 (기본 접힘) ───────────────────────── */}
       <div className="am-full-analysis-collapse">
@@ -794,6 +802,31 @@ function ConvergenceFlowSection({ analysis }: { analysis: DiscussionAnalysis }) 
           <div className="am-cf-final-text">{finalText}</div>
         </div>
       </div>
+    </Section>
+  );
+}
+
+function FirstConsensusSection({ selectedOption }: { selectedOption: NonNullable<Topic['selectedOption']> }) {
+  const value = (selectedOption.content as { value: string }).value;
+  const sourceLabel =
+    selectedOption.convergenceSource === "manual_policy" ? "수동 채택" :
+    selectedOption.convergenceSource === "manual_select" ? "직접 선택" :
+    "자동 수렴";
+
+  return (
+    <Section title="최초 합의">
+      <p className="am-first-consensus-desc">
+        AI들이 처음으로 공통 방향에 도달했던 시점입니다.
+        이후 토론을 통해 논리는 계속 발전했습니다.
+      </p>
+      <div className="am-first-consensus-value">{value}</div>
+      <div className="am-first-consensus-meta">
+        <span className="am-first-consensus-source">{sourceLabel}</span>
+        <span className="am-first-consensus-by">— {selectedOption.selectedBy}</span>
+      </div>
+      <p className="am-first-consensus-hint">
+        이후 진화된 결론은 상단의 "진화된 합의" 또는 "최종 진화 구조"에서 확인하세요.
+      </p>
     </Section>
   );
 }

@@ -2898,7 +2898,7 @@ function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClic
               <div className="topic-evo-text">{evo.text}</div>
               {selectedVal && !evo.isFinalResolution && (
                 <div className="topic-winner-secondary">
-                  <span className="topic-winner-label">{getConsensusSourceLabel(topic.selectedOption?.convergenceSource)}</span>
+                  <span className="topic-winner-label">최초 합의</span>
                   <span className="topic-winner-val">{selectedVal}</span>
                   <span className="topic-winner-by">— {topic.selectedOption!.selectedBy}</span>
                 </div>
@@ -2912,7 +2912,7 @@ function TopicCard({ topic, demoMeta, analysis: propAnalysis, isSelected, onClic
             {selectedVal && (
               <div className="topic-selected">
                 ✓ {selectedVal}
-                <span className="topic-selected-by">{getConsensusSourceLabel(topic.selectedOption?.convergenceSource)} · {topic.selectedOption!.selectedBy}</span>
+                <span className="topic-selected-by">최초 합의 · {topic.selectedOption!.selectedBy}</span>
               </div>
             )}
             {analysis && topic.interactionStyle !== "conversation" && (

@@ -103,6 +103,59 @@
 .am-section:last-child { border-bottom: none; }
 .am-section-deadlock { background: rgba(90, 20, 20, 0.12); }
 
+/* ─── FirstConsensusSection ──────────────────────────────────────── */
+.am-first-consensus-desc {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+.am-first-consensus-value {
+  font-size: 13px;
+  color: var(--text-secondary, #c0c0c0);
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid #555;
+  border-radius: 3px;
+  margin-bottom: 8px;
+}
+.am-first-consensus-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.am-first-consensus-source {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.am-first-consensus-by {
+  font-size: 10px;
+  color: #666;
+}
+.am-first-consensus-hint {
+  font-size: 10px;
+  color: #666;
+  line-height: 1.5;
+  margin: 0;
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: light) {
+  .am-first-consensus-value {
+    background: rgba(0, 0, 0, 0.04);
+    border-left-color: #bbb;
+  }
+  .am-first-consensus-desc { color: #777; }
+  .am-first-consensus-source { color: #777; }
+  .am-first-consensus-by { color: #999; }
+  .am-first-consensus-hint { color: #999; }
+}
+
 .am-section-title {
   font-size: 11px;
   font-weight: 700;
