@@ -638,6 +638,17 @@ function deleteTopicFromResult(result: RunResult, localIdx: number): RunResult {
   };
 }
 
+// ─── Recent Discussions (sidebar) ────────────────────────────────
+// completed = 저장된 sessions에서 파생된 topic 목록 (result.topics, idx는 result.topics 내 global index)
+// live      = 현재 진행 중인 토론의 topic — 아직 sessions에 merge되지 않았으므로 idx=-1(선택 불가)로 overlay만 함
+type RecentTopicEntry = { topic: Topic; idx: number; live: boolean };
+
+function buildRecentTopics(result: RunResult | null, liveResult: RunResult | null): RecentTopicEntry[] {
+  const completed: RecentTopicEntry[] = (result?.topics ?? []).map((topic, idx) => ({ topic, idx, live: false }));
+  const live: RecentTopicEntry[] = (liveResult?.topics ?? []).map(topic => ({ topic, idx: -1, live: true }));
+  return [...completed, ...live].slice(-6).reverse();
+}
+
 // 누적 sessions에서 globalIdx가 속한 session과 local index를 반환
 function findSessionForTopic(sessions: RunResult[], globalIdx: number): { sessionIdx: number; localIdx: number } | null {
   let cumulative = 0;
@@ -819,6 +830,8 @@ function ResizablePanels({ panes }: { panes: ResizablePane[] }) {
 const MODES = ["normal", "parsefail", "apierror", "delay", "mixed", "stress"];
 const LS_KEY = "gcpt-ws-state";
 const LS_VER = 2;
+const DISCUSSIONS_LS_KEY = "gcpt-discussions";
+const DISCUSSIONS_LS_VER = 1;
 const ONBOARDING_KEY = "gcpt-onboarding-seen-v1";
 const DEMO_PLACEHOLDER_VALUES = new Set(["Option-A", "Option-B", "Option-C", "Alt-X", "Alt-Y", "Alt-Z"]);
 
@@ -960,8 +973,10 @@ const DISC_MODE_LABELS: Record<DiscussionMode, string> = {
 export default function App() {
   const [view,             setView]             = useState<AppView>("engine");
   const [selected,         setSelected]         = useState("normal");
-  // 누적 세션 — 각 RunResult는 독립적인 토론 세션 (새 실행마다 append)
+  // 누적 세션 — 각 RunResult는 독립적인 토론 세션 (새 실행마다 append, localStorage에 자동 저장/복원됨)
   const [sessions,         setSessions]         = useState<RunResult[]>([]);
+  // 입력(홈) 화면 표시 여부 — "새 토론" 클릭 시 true. sessions는 건드리지 않으므로 기록은 보존된다.
+  const [homeView,         setHomeView]         = useState(true);
   const [passMap,          setPassMap]          = useState<PassMap>({});
   const [running,          setRunning]          = useState(false);
   const [runLabel,         setRunLabel]         = useState("");
@@ -974,6 +989,7 @@ export default function App() {
   const [wsLinkedTopic, setWsLinkedTopic] = useState<TopicContext | null>(null);
   const wsLogId            = useRef(0);
   const initialSaveSkipped = useRef(false);
+  const discussionsInitialSaveSkipped = useRef(false);
   // interjection(continuation) 중인지 추적 — done 시 append vs replace 결정
   const isInterjectionRef  = useRef(false);
 
@@ -1164,6 +1180,45 @@ export default function App() {
     }
   }, [wsState, wsLog]);
 
+  // ── 토론 기록(sessions) localStorage 복원 (mount 1회) ──────────
+  // Workspace AI 상태와 동일한 persistence 방식 재사용 — 앱 재시작/renderer reload에도
+  // "최근 토론" 목록이 사라지지 않도록 sessions 전체를 저장/복원한다.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISCUSSIONS_LS_KEY);
+      if (!raw) return;
+
+      const saved = JSON.parse(raw);
+      if (saved.version !== DISCUSSIONS_LS_VER || !Array.isArray(saved.sessions)) {
+        console.log("[discussions localStorage] version mismatch or invalid shape → clearing");
+        localStorage.removeItem(DISCUSSIONS_LS_KEY);
+        return;
+      }
+
+      if (saved.sessions.length > 0) {
+        setSessions(saved.sessions as RunResult[]);
+      }
+    } catch (e) {
+      console.error("[discussions localStorage] restore error", e);
+      localStorage.removeItem(DISCUSSIONS_LS_KEY);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 토론 기록(sessions) localStorage 저장 (변경 시마다) ─────────
+  // 첫 실행은 건너뜀: 위 restore effect가 같은 mount에서 이미 실행되므로, sessions가
+  // 여전히 초기값(빈 배열)인 상태로 저장하면 restore되기 전에 기존 기록을 덮어쓴다.
+  useEffect(() => {
+    if (!discussionsInitialSaveSkipped.current) {
+      discussionsInitialSaveSkipped.current = true;
+      return;
+    }
+    try {
+      localStorage.setItem(DISCUSSIONS_LS_KEY, JSON.stringify({ version: DISCUSSIONS_LS_VER, sessions }));
+    } catch {
+      // QuotaExceededError 등 무시 — 메모리 상의 sessions는 그대로 유지됨
+    }
+  }, [sessions]);
+
   const topicRevRanges = useMemo(() => {
     if (!result) return [];
     return result.topics.map((topic, i) => ({
@@ -1191,6 +1246,22 @@ export default function App() {
     setSelectedRevId(null);
   }
 
+  // "최근 토론" 사이드바에서 특정 토론을 클릭 — 결과 화면으로 전환해 해당 토론을 연다.
+  // sessions/result는 이미 전체 기록을 담고 있으므로(복원 포함) 별도 조회 없이 필터만으로 복원된다.
+  function openRecentTopic(globalIdx: number) {
+    if (aiProcessing) return; // live 실행 중엔 displayResult가 liveResult로 전환되어 인덱스가 어긋나므로 비활성화
+    if (!result || globalIdx < 0 || globalIdx >= result.topics.length) return;
+    setHomeView(false);
+    setSelectedTopicIdx(globalIdx);
+    setSelectedRevId(null);
+  }
+
+  // 사이드바 "최근 토론" 내비게이션 버튼 — 가장 최근 토론을 연다.
+  function openLatestDiscussion() {
+    if (!result || result.topics.length === 0) return;
+    openRecentTopic(result.topics.length - 1);
+  }
+
   function handleRevClick(revId: number) {
     setSelectedRevId(prev => prev === revId ? null : revId);
     const idx = topicRevRanges.findIndex(r => revId >= r.startId && revId < r.endId);
@@ -1202,6 +1273,7 @@ export default function App() {
       await runCustom();
       return;
     }
+    setHomeView(false);
     if (liveEnabled) {
       await startLiveRun(GOAL_SETS[selected] ?? ["데이터베이스 기술 스택 결정"], discussionMode);
     } else {
@@ -1218,6 +1290,7 @@ export default function App() {
   async function runCustom() {
     const goal = customGoal.trim();
     if (!goal) return;
+    setHomeView(false);
     if (liveEnabled) {
       setSelected("custom");
       await startLiveRun([goal], discussionMode);
@@ -1265,6 +1338,17 @@ export default function App() {
       setSessionStatus(`저장됨: ${name}`);
       setTimeout(() => setSessionStatus(""), 4000);
     }
+  }
+
+  // 불러온 세션을 기존 sessions 뒤에 append — 기존 기록을 덮어쓰지 않는다.
+  // 완전히 동일한 내용이 이미 있으면(같은 파일을 다시 불러온 경우) 중복 추가하지 않는다.
+  function appendLoadedSession(restored: RunResult) {
+    setSessions(prev => {
+      const serialized = JSON.stringify(restored);
+      const alreadyExists = prev.some(s => JSON.stringify(s) === serialized);
+      return alreadyExists ? prev : [...prev, restored];
+    });
+    setHomeView(false);
   }
 
   async function loadSession() {
@@ -1322,7 +1406,7 @@ export default function App() {
           history:       revisions,
         };
 
-        setSessions([restored]);
+        appendLoadedSession(restored);
         setSelectedTopicIdx(null);
         setSelectedRevId(null);
         setSelected("custom");
@@ -1357,7 +1441,7 @@ export default function App() {
           history:       session.revisions,
         };
 
-        setSessions([restored]);
+        appendLoadedSession(restored);
         setSelectedTopicIdx(null);
         setSelectedRevId(null);
         setSelected(session.mode === "custom" ? "custom" : session.mode);
@@ -1384,6 +1468,7 @@ export default function App() {
   async function runAll() {
     // Live ON 상태에서는 전체 테스트 미지원 (버튼이 비활성화되므로 도달하지 않음)
     if (liveEnabled) return;
+    setHomeView(false);
     setRunning(true);
     setRunLabel("전체 테스트");
     setSelectedTopicIdx(null);
@@ -1396,10 +1481,12 @@ export default function App() {
     setRunning(false);
   }
 
-  // 새 토론 — 입력(홈) 화면으로 초기화. 진행 중에는 안전하게 무시한다.
+  // 새 토론 — 입력(홈) 화면으로 전환. sessions(기록)는 건드리지 않으므로
+  // "최근 토론" 목록은 그대로 남아있고, 언제든 다시 열어볼 수 있다.
+  // 진행 중에는 안전하게 무시한다.
   function goHome() {
     if (running || aiProcessing) return;
-    setSessions([]);
+    setHomeView(true);
     setLiveResult(null);
     setSelectedTopicIdx(null);
     setSelectedRevId(null);
@@ -1433,6 +1520,7 @@ export default function App() {
 
     try {
       isInterjectionRef.current = false; // 새 실행 = append 모드
+      setHomeView(false);
       setAiProcessing(true);
       setLiveResult(null);
       setLiveStatus("토론 시작 중...");
@@ -1589,6 +1677,8 @@ export default function App() {
   const displayResult = aiProcessing ? (liveResult ?? result) : result;
   const demoMeta = useMemo(() => getDemoResultMeta(displayResult), [displayResult]);
   const showDemoRunNotice = view === "engine" && !liveEnabled && !aiProcessing;
+  // 입력(홈) 화면 표시 여부 — "새 토론" 클릭(homeView) 또는 표시할 결과가 전혀 없을 때(첫 실행 전)
+  const isWelcomeView = homeView || (!displayResult && !aiProcessing);
 
   // 장시간 모드 실행 중 상태 텍스트 — API 호출 수 + 현재 우세 의견 표시
   const enhancedLiveStatus = useMemo(() => {
@@ -1609,7 +1699,7 @@ export default function App() {
   }, [aiProcessing, discussionDepth, liveStatus, liveResult]);
 
   return (
-    <div className={`app theme-${theme} ${!displayResult && !aiProcessing ? "app-empty" : "app-active"}`}>
+    <div className={`app theme-${theme} ${isWelcomeView ? "app-empty" : "app-active"}`}>
       {analysisModal && (
         <>
           {demoMeta.isDemo && <AnalysisDemoNotice hasPlaceholder={demoMeta.hasPlaceholder} />}
@@ -1690,11 +1780,13 @@ export default function App() {
               }}
               providerSettingsOpen={providerSettingsOpen}
               onProviderSettingsToggle={() => setProviderSettingsOpen(true)}
-              recentTopics={(displayResult?.topics ?? []).slice(-6).reverse()}
+              recentTopics={buildRecentTopics(result, aiProcessing ? liveResult : null)}
+              onSelectRecentTopic={openRecentTopic}
+              onOpenLatestDiscussion={openLatestDiscussion}
             />
             <div className="engine-main">
               {showDemoRunNotice && <DemoRunNotice />}
-              {!displayResult && !aiProcessing ? (
+              {isWelcomeView ? (
                 <WelcomeScreen
                   customGoal={customGoal}
                   onCustomGoalChange={setCustomGoal}
@@ -2253,7 +2345,8 @@ function Sidebar({ modes, selected, passMap, onSelect,
                    providerSettings, onProviderSettingsChange,
                    providerSettingsOpen, onProviderSettingsToggle,
                    onNewDiscussion,
-                   recentTopics = [] }: {
+                   recentTopics = [],
+                   onSelectRecentTopic, onOpenLatestDiscussion }: {
   modes: string[]; selected: string; passMap: PassMap;
   onSelect: (m: string) => void;
   onNewDiscussion: () => void;
@@ -2267,7 +2360,9 @@ function Sidebar({ modes, selected, passMap, onSelect,
   onProviderSettingsChange: (s: ProvidersConfig) => void;
   providerSettingsOpen: boolean;
   onProviderSettingsToggle: () => void;
-  recentTopics?: Topic[];
+  recentTopics?: RecentTopicEntry[];
+  onSelectRecentTopic: (globalIdx: number) => void;
+  onOpenLatestDiscussion: () => void;
 }) {
   void onProviderSettingsChange;
   void providerSettingsOpen;
@@ -2300,7 +2395,13 @@ function Sidebar({ modes, selected, passMap, onSelect,
         >
           새 토론
         </button>
-        <button className="side-nav-item" type="button" title="현재 세션의 최근 토론 목록을 확인합니다.">
+        <button
+          className="side-nav-item"
+          type="button"
+          onClick={onOpenLatestDiscussion}
+          disabled={recentTopics.length === 0}
+          title="가장 최근 토론을 다시 엽니다."
+        >
           최근 토론
         </button>
         <button className="side-nav-item" type="button" onClick={onProviderSettingsToggle} title="AI 연결과 고급 설정을 관리합니다.">
@@ -2314,11 +2415,18 @@ function Sidebar({ modes, selected, passMap, onSelect,
           <small>{recentTopics.length}</small>
         </div>
         {recentTopics.length === 0 ? (
-          <div className="sidebar-empty">아직 저장된 토론이 없습니다</div>
-        ) : recentTopics.map((topic, idx) => (
-          <button key={`${topic.startRevId}-${idx}`} className="recent-topic" type="button">
-            <strong>{topic.goal}</strong>
-            <em>{topic.status === "decided" ? "완료" : topic.status === "active" ? "진행 중" : topic.status}</em>
+          <div className="sidebar-empty">아직 진행한 토론이 없습니다 — 새 토론을 시작하면 자동으로 기록됩니다</div>
+        ) : recentTopics.map((entry, idx) => (
+          <button
+            key={`${entry.live ? "live" : entry.topic.startRevId}-${idx}`}
+            className={`recent-topic ${entry.live ? "recent-topic-live" : ""}`}
+            type="button"
+            disabled={entry.live}
+            onClick={entry.live ? undefined : () => onSelectRecentTopic(entry.idx)}
+            title={entry.live ? "진행 중인 토론 — 완료되면 목록에 저장됩니다." : "이 토론을 다시 엽니다."}
+          >
+            <strong>{entry.topic.goal}</strong>
+            <em>{entry.live ? "진행 중" : entry.topic.status === "decided" ? "완료" : entry.topic.status === "active" ? "진행 중" : entry.topic.status}</em>
           </button>
         ))}
       </section>

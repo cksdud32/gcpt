@@ -2941,6 +2941,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
   border-radius: 16px;
   background: var(--surface);
 }
+.recent-topic:hover:not(:disabled) {
+  border-color: var(--primary);
+  cursor: pointer;
+}
+.recent-topic-live {
+  border-style: dashed;
+  opacity: 0.75;
+}
 .recent-topic span {
   display: -webkit-box;
   -webkit-line-clamp: 2;
