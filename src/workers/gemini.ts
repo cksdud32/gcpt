@@ -250,9 +250,9 @@ export class RealGeminiWorker {
     budget?: DiscussionBudget,
     private modelOverride?: string,
   ) {
-    const rounds = budget?.maxRoundsPerWorker ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
+    const rounds = budget?.maxRoundsPerWorker ?? DEPTH_BUDGETS.structural_convergence.maxRoundsPerWorker;
     this.maxPerTopic          = rounds;
-    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.balanced.maxDistinctProposals;
+    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.structural_convergence.maxDistinctProposals;
     // maxPerRun: goal 수 × rounds 기준으로 확보, 최소 8
     this.maxPerRun = Math.max(8, rounds * 3);
     const models = modelOverride ? [modelOverride, ...getModelList().filter(m => m !== modelOverride)] : getModelList();

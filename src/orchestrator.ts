@@ -5,7 +5,7 @@ import { selectByPolicy } from "./policy.js";
 import { Metrics } from "./metrics.js";
 import { getModeInstruction } from "./workers/mode-instruction.js";
 
-const DEFAULT_BUDGET: DiscussionBudget = DEPTH_BUDGETS.balanced;
+const DEFAULT_BUDGET: DiscussionBudget = DEPTH_BUDGETS.structural_convergence;
 
 // ─── Mock 시뮬레이션 설정 ─────────────────────────────────────────
 

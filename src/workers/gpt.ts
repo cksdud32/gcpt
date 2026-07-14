@@ -85,8 +85,8 @@ export class RealGPTWorker {
 
   constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget, private model = "gpt-5-mini") {
     this.client = new OpenAI({ apiKey });
-    this.maxPerTopic         = budget?.maxRoundsPerWorker   ?? DEPTH_BUDGETS.balanced.maxRoundsPerWorker;
-    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.balanced.maxDistinctProposals;
+    this.maxPerTopic         = budget?.maxRoundsPerWorker   ?? DEPTH_BUDGETS.structural_convergence.maxRoundsPerWorker;
+    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.structural_convergence.maxDistinctProposals;
   }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {

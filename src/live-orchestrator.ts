@@ -7,8 +7,9 @@ import { selectByPolicy } from "./policy.js";
 import { ConsensusEvaluator } from "./consensus-evaluator.js";
 import { PhaseController } from "./phase-controller.js";
 import { detectConsensusSaturation } from "./saturation.js";
-import { Revision, Topic, DiscussionMode, DiscussionBudget, ConsensusMode, DEPTH_BUDGETS, ProvidersConfig, SegmentMemoryContext } from "./types.js";
+import { Revision, Topic, DiscussionMode, DiscussionBudget, ConsensusMode, DEPTH_BUDGETS, ProvidersConfig, SegmentMemoryContext, Author } from "./types.js";
 import { analyzeTopics, analyzeDiscussion } from "./analysis.js";
+import { detectQuestionEvolution } from "./question-evolution.js";
 import type { RunResult } from "./test-modes.js";
 
 type PhaseInjectable    = { setPhaseInstruction: (s: string) => void };
@@ -288,6 +289,38 @@ export class LiveOrchestrator {
       stagnationRounds: this.evaluator.getStagnationRounds(),
     });
     if (advanced) this.applyPhaseTransition();
+  }
+
+  /**
+   * question_evolution 모드 전용 — 라운드 완료 후 질문 변화 감지.
+   * proposals >= 4이면 detectQuestionEvolution 실행; reframed/shifted/transformed 감지 시 종료.
+   */
+  private checkQuestionDrift(goalRevId: number): void {
+    if (!this.evalBudget || this.evalBudget.targetCondition !== "question_drift") return;
+    if (this.terminated || this.decidedGoalRevIds.has(goalRevId)) return;
+
+    const state = this.store.rebuildState();
+    const topic = state.topics.find(t => t.startRevId === goalRevId);
+    if (!topic || topic.proposals.length < 4) return;
+
+    const actors = [...new Set(topic.proposals.map(p => p.author))] as Author[];
+    const qe = detectQuestionEvolution(topic, topic.proposals, actors);
+    if (!qe) return;
+
+    const hasDrift = qe.driftType === "reframed_topic"
+      || qe.driftType === "shifted_topic"
+      || qe.driftType === "transformed_topic";
+    if (!hasDrift) return;
+
+    console.log(`[question_drift] detected driftType=${qe.driftType} percent=${qe.driftPercent}`);
+    this.decidedGoalRevIds.add(goalRevId);
+    this.store.append("system", {
+      type: "discussion_paused",
+      payload: { type: "discussion_paused", reason: "question_drift_detected" },
+      rationale: `질문 변화 감지 — ${qe.driftType} (이동률 ${qe.driftPercent}%)`,
+    });
+    this.stopRun("question_drift_detected");
+    this.onGoalsDone?.(this.buildRunResult());
   }
 
   /**
@@ -618,7 +651,10 @@ export class LiveOrchestrator {
       roundSpokeActors.clear();
       roundBailedActors.clear();
       console.log(`[round] complete { roundId: ${prevRoundId}, resolvedActors: [${spoke.join(",")}] }`);
-      if (currentGoalRevId !== null) this.runEvaluator(currentGoalRevId);
+      if (currentGoalRevId !== null) {
+        this.runEvaluator(currentGoalRevId);
+        if (!this.terminated) this.checkQuestionDrift(currentGoalRevId);
+      }
     };
 
     this.store.subscribe((rev) => {
@@ -760,7 +796,7 @@ export class LiveOrchestrator {
   async runGoals(
     goals: string[],
     discussionMode: DiscussionMode = "general",
-    budget: DiscussionBudget = DEPTH_BUDGETS.balanced,
+    budget: DiscussionBudget = DEPTH_BUDGETS.structural_convergence,
     onGoalsDone?: (result: RunResult) => void,
     consensusMode: ConsensusMode = "auto",
     providers?: ProvidersConfig,

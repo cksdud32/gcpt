@@ -961,7 +961,7 @@ export default function App() {
 
   // ── 토론 모드 / 깊이 / 수렴 방식 / 대화 방식 ──────────────────────
   const [discussionMode,      setDiscussionMode]      = useState<DiscussionMode>("general");
-  const [discussionDepth,     setDiscussionDepth]     = useState<DiscussionDepth>("balanced");
+  const [discussionDepth,     setDiscussionDepth]     = useState<DiscussionDepth>("structural_convergence");
   const [consensusMode,       setConsensusMode]       = useState<ConsensusMode>("auto");
   const [safetyLimitEnabled,  setSafetyLimitEnabled]  = useState(true);
   const [interactionStyle,    setInteractionStyle]    = useState<InteractionStyle>("debate");
@@ -1570,10 +1570,13 @@ export default function App() {
   const demoMeta = useMemo(() => getDemoResultMeta(displayResult), [displayResult]);
   const showDemoRunNotice = view === "engine" && !liveEnabled && !aiProcessing;
 
-  // until_consensus 실행 중 상태 텍스트 — API 호출 수 + 현재 우세 의견 표시
+  // 장시간 모드 실행 중 상태 텍스트 — API 호출 수 + 현재 우세 의견 표시
   const enhancedLiveStatus = useMemo(() => {
-    if (!aiProcessing || discussionDepth !== "until_consensus") return liveStatus;
-    if (!liveResult) return liveStatus || "합의 도달 모드 실행 중...";
+    const isLongRunMode = discussionDepth === "structural_convergence"
+      || discussionDepth === "question_evolution"
+      || discussionDepth === "deep_evolution";
+    if (!aiProcessing || !isLongRunMode) return liveStatus;
+    if (!liveResult) return liveStatus || `${DEPTH_LABELS[discussionDepth]} 실행 중...`;
     const proposals = liveResult.history.filter(r =>
       r.patch.payload.type === "propose_decision" ||
       r.patch.payload.type === "propose_alternative",
@@ -1582,7 +1585,7 @@ export default function App() {
     const lastTopic = liveResult.topics[liveResult.topics.length - 1];
     const agg = lastTopic && lastTopic.interactionStyle !== "conversation" ? computeAggregation(lastTopic) : [];
     const leadingValue = agg.length > 0 ? agg[0].value : null;
-    return `합의 도달 모드 · API ${apiCalls}회${leadingValue ? ` · 현재 우세: ${leadingValue}` : ""}`;
+    return `${DEPTH_LABELS[discussionDepth]} · API ${apiCalls}회${leadingValue ? ` · 현재 우세: ${leadingValue}` : ""}`;
   }, [aiProcessing, discussionDepth, liveStatus, liveResult]);
 
   return (
@@ -2167,7 +2170,7 @@ function Header({ view, onViewChange, executionRunning, liveSessionActive, liveS
           >
             {liveEnabled ? "실시간 켜짐" : "실시간 꺼짐"}
           </button>
-          {discussionDepth === "until_consensus" && executionRunning && (
+          {(discussionDepth === "structural_convergence" || discussionDepth === "question_evolution" || discussionDepth === "deep_evolution") && executionRunning && (
             <button
               className="stop-discussion-btn"
               onClick={onStopDiscussion}
@@ -2241,6 +2244,13 @@ function Sidebar({ modes, selected, passMap, onSelect,
   const runnableProviders = runnableProviderNames(providerSettings);
   const missingKeyProviders = enabledProvidersWithoutApiKey(providerSettings);
   const providerLabel = (p: ProviderName) => PROVIDER_LABELS[p];
+
+  const DEPTH_DESCS: Record<DiscussionDepth, string> = {
+    quick_conclusion:       "빠르게 결론을 도출합니다.",
+    structural_convergence: "AI들이 공통된 사고 구조를 만들 때까지 토론합니다. (기본 추천)",
+    question_evolution:     "질문 자체가 새로운 방향으로 진화할 때까지 토론합니다.",
+    deep_evolution:         "가능한 많은 논리 진화를 탐색합니다.",
+  };
 
   return (
     <div className="sidebar">
@@ -2353,41 +2363,30 @@ function Sidebar({ modes, selected, passMap, onSelect,
 
         <div className="disc-mode-section">
           <div className="sidebar-title">
-            토론 깊이
-            {(discussionDepth === "deep" || discussionDepth === "until_consensus") && (
+            진화 단계
+            {(discussionDepth === "question_evolution" || discussionDepth === "deep_evolution") && (
               <span className="depth-cost-hint"> 토큰 증가</span>
             )}
           </div>
-          <div className="disc-mode-btns">
-            {(["fast", "balanced", "deep"] as const).map(d => (
+          <div className="disc-mode-btns disc-mode-btns-col">
+            {(["quick_conclusion", "structural_convergence", "question_evolution", "deep_evolution"] as const).map(d => (
               <button
                 key={d}
-                className={`disc-mode-btn ${discussionDepth === d ? "active" : ""}`}
+                className={`disc-mode-btn disc-mode-btn-wide ${discussionDepth === d ? "active" : ""}`}
                 onClick={() => onDiscussionDepthChange(d)}
                 disabled={running || interactionStyle === "conversation"}
-                title={
-                  d === "fast"     ? "1라운드 · 빠른 결론" :
-                  d === "balanced" ? "2라운드 · 기본" :
-                                     "5라운드 · 심층 토론 · 토큰 증가"
-                }
+                title={DEPTH_DESCS[d]}
               >
-                {DEPTH_LABELS[d]}
+                <span className="disc-mode-btn-label">{DEPTH_LABELS[d]}</span>
+                <span className="disc-mode-btn-desc">{DEPTH_DESCS[d]}</span>
               </button>
             ))}
           </div>
-          <div className="disc-mode-btns" style={{ marginTop: 4 }}>
-            <button
-              className={`disc-mode-btn until-consensus-btn ${discussionDepth === "until_consensus" ? "active" : ""}`}
-              onClick={() => onDiscussionDepthChange("until_consensus")}
-              disabled={running || interactionStyle === "conversation"}
-              title="합의 도달까지 최대 20라운드 · 30분 안전 타임아웃 · 실험 모드"
-            >
-              {DEPTH_LABELS["until_consensus"]}
-            </button>
-          </div>
-          {discussionDepth === "until_consensus" && (
+          {(discussionDepth === "question_evolution" || discussionDepth === "deep_evolution") && (
             <div className="until-consensus-warn">
-              실험 모드: 합의 도달 시까지 자동 토론을 계속합니다. API 호출이 많아질 수 있습니다.
+              {discussionDepth === "question_evolution"
+                ? "질문 변화가 감지되면 자동 종료됩니다. API 호출이 늘어날 수 있습니다."
+                : "최대 논리 진화를 탐색합니다. API 호출이 많아질 수 있습니다."}
             </div>
           )}
         </div>

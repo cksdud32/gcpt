@@ -26,32 +26,46 @@ export type InteractionStyle = "debate" | "conversation";
 
 // ─── Discussion Budget ────────────────────────────────────────────
 
-/** 토론 길이 — 결론 확정 방식과 무관 */
-export type DiscussionDepth = "fast" | "balanced" | "deep" | "until_consensus";
+/**
+ * 논리 진화 단계 — "몇 번 토론할 것인가"가 아니라 "어느 단계까지 진화를 허용할 것인가"
+ */
+export type DiscussionDepth =
+  | "quick_conclusion"      // 빠른 결론: 첫 합의 또는 safety limit 도달 시 종료
+  | "structural_convergence" // 구조 수렴까지: AI들이 공통 사고 구조를 형성할 때까지 (기본값)
+  | "question_evolution"    // 질문 변화까지: 질문 자체가 reframed/shifted/transformed 감지 시 종료
+  | "deep_evolution";       // 심층 진화: 논리 진화를 최대한 탐색 후 수렴 또는 safety limit 종료
 
 /** 결론 확정 방식 — 토론 길이와 무관 */
 export type ConsensusMode = "auto" | "manual";
 
+/** 종료 목표 조건 */
+export type TargetCondition =
+  | "first_consensus"       // 첫 합의 또는 round limit
+  | "structural_convergence" // convergence_freeze / pseudo_convergence / soft_consensus
+  | "question_drift"        // 질문 변화 감지 시 종료
+  | "exhaustive";           // 최대 진화 후 수렴 또는 limit
+
 export interface DiscussionBudget {
-  maxRoundsPerWorker:   number; // AI 워커 1개당 최대 발언 횟수
-  maxDistinctProposals: number; // actor당 신규 후보 제안 가능 횟수 (초과 시 defend/concede로 전환)
-  stabilityMode:        boolean; // true = 높은 임계값으로 수렴 판단 (until_consensus 전용)
-  safetyTimeoutMs:      number;  // 전체 세션 강제 종료 한도 (ms)
-  safetyLimitEnabled:   boolean; // false = safety_limit verdict 무시 (한도 도달 시 토론 계속)
+  maxRoundsPerWorker:   number;          // AI 워커 1개당 최대 발언 횟수
+  maxDistinctProposals: number;          // actor당 신규 후보 제안 가능 횟수 (초과 시 defend/concede로 전환)
+  stabilityMode:        boolean;         // true = 높은 임계값으로 수렴 판단
+  safetyTimeoutMs:      number;          // 전체 세션 강제 종료 한도 (ms)
+  safetyLimitEnabled:   boolean;         // false = safety_limit verdict 무시
+  targetCondition:      TargetCondition; // 이 모드의 종료 목표
 }
 
 export const DEPTH_BUDGETS: Record<DiscussionDepth, DiscussionBudget> = {
-  fast:            { maxRoundsPerWorker:  1, maxDistinctProposals: 1, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
-  balanced:        { maxRoundsPerWorker:  2, maxDistinctProposals: 2, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
-  deep:            { maxRoundsPerWorker:  5, maxDistinctProposals: 3, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true },
-  until_consensus: { maxRoundsPerWorker: 20, maxDistinctProposals: 3, stabilityMode: true,  safetyTimeoutMs: 30 * 60 * 1000, safetyLimitEnabled: true },
+  quick_conclusion:      { maxRoundsPerWorker:  2, maxDistinctProposals: 2, stabilityMode: false, safetyTimeoutMs: 10 * 60 * 1000, safetyLimitEnabled: true, targetCondition: "first_consensus"       },
+  structural_convergence:{ maxRoundsPerWorker:  8, maxDistinctProposals: 3, stabilityMode: true,  safetyTimeoutMs: 15 * 60 * 1000, safetyLimitEnabled: true, targetCondition: "structural_convergence" },
+  question_evolution:    { maxRoundsPerWorker: 15, maxDistinctProposals: 4, stabilityMode: true,  safetyTimeoutMs: 20 * 60 * 1000, safetyLimitEnabled: true, targetCondition: "question_drift"        },
+  deep_evolution:        { maxRoundsPerWorker: 30, maxDistinctProposals: 5, stabilityMode: true,  safetyTimeoutMs: 30 * 60 * 1000, safetyLimitEnabled: true, targetCondition: "exhaustive"            },
 };
 
 export const DEPTH_LABELS: Record<DiscussionDepth, string> = {
-  fast:            "빠르게",
-  balanced:        "보통",
-  deep:            "깊게",
-  until_consensus: "합의 도달",
+  quick_conclusion:       "빠른 결론",
+  structural_convergence: "구조 수렴까지",
+  question_evolution:     "질문 변화까지",
+  deep_evolution:         "심층 진화",
 };
 
 export const CONSENSUS_LABELS: Record<ConsensusMode, string> = {
@@ -123,8 +137,9 @@ export interface DiscussionPausedPayload {
         | "conversation_end"     // 대화 모드: 지정 턴 수 완료 후 자동 종료
         | "branch_frozen"        // 동일 semantic defend 반복 → argument entropy 붕괴
         | "semantic_convergence" // actor간 의미 유사도 > 0.88 고수렴 확정
-        | "discussion_exhausted" // novelty 완전 소진 + 지배 branch 생존 → 수렴 완료
-        | "pseudo_convergence";  // 표면 불일치 이면 구조 수렴 (semantic loop)
+        | "discussion_exhausted"      // novelty 완전 소진 + 지배 branch 생존 → 수렴 완료
+        | "pseudo_convergence"        // 표면 불일치 이면 구조 수렴 (semantic loop)
+        | "question_drift_detected";  // 질문 변화 감지 — question_evolution 모드 종료
 }
 
 /**

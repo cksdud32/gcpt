@@ -1625,6 +1625,12 @@ button:disabled { opacity: 0.4; cursor: default; }
   padding: 0 8px;
 }
 
+/* 진화 단계 모드 — 세로 배치 */
+.disc-mode-btns-col {
+  flex-direction: column;
+  gap: 3px;
+}
+
 .disc-mode-btn {
   flex: 1;
   padding: 3px 4px;
@@ -1644,8 +1650,29 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .disc-mode-btn:disabled { opacity: 0.4; cursor: default; }
 
-.until-consensus-btn { color: var(--warn); border-color: var(--warn); }
-.until-consensus-btn.active { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+/* 진화 단계 — 전체 너비 버튼 */
+.disc-mode-btn-wide {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.disc-mode-btn-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.disc-mode-btn-desc {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  line-height: 1.35;
+  white-space: normal;
+}
 
 .safety-limit-toggle {
   display: flex; align-items: center; gap: 6px;

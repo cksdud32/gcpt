@@ -116,7 +116,7 @@ export class RealClaudeWorker {
   constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: import("../types.js").DiscussionBudget, private model = "claude-haiku-4-5-20251001") {
     this.client = new Anthropic({ apiKey });
     this.maxPerTopic          = budget?.maxRoundsPerWorker   ?? 2;
-    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.balanced.maxDistinctProposals;
+    this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.structural_convergence.maxDistinctProposals;
   }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {

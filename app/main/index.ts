@@ -356,7 +356,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   safetyLimitEnabled?: boolean;
   interactionStyle?: InteractionStyle;
 }) => {
-  const { goals, mode: discussionMode = "general", depth = "balanced", consensusMode = "auto", safetyLimitEnabled, interactionStyle = "debate" } = payload;
+  const { goals, mode: discussionMode = "general", depth = "structural_convergence", consensusMode = "auto", safetyLimitEnabled, interactionStyle = "debate" } = payload;
 
   const enabledWithoutKey = getEnabledProvidersWithoutApiKey(currentProviders);
   if (enabledWithoutKey.length > 0) {
@@ -422,7 +422,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
 
   // ── Debate Mode (LiveOrchestrator) ───────────────────────────────
   console.log("[ipc] selected orchestrator = LiveOrchestrator");
-  const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.balanced };
+  const budget = { ...DEPTH_BUDGETS[depth] ?? DEPTH_BUDGETS.structural_convergence };
   if (safetyLimitEnabled !== undefined) budget.safetyLimitEnabled = safetyLimitEnabled;
   console.log("[main] fresh live budget", { depth, safetyLimitEnabled: budget.safetyLimitEnabled });
   const timeoutMs = budget.safetyTimeoutMs ?? DEFAULT_DISCUSSION_TIMEOUT_MS;
