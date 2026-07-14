@@ -6,9 +6,10 @@ import { selectByPolicy } from "./policy.js";
 import { ConsensusEvaluator } from "./consensus-evaluator.js";
 import { PhaseController } from "./phase-controller.js";
 import { detectConsensusSaturation } from "./saturation.js";
-import { Revision, Topic, DiscussionMode, DiscussionBudget, ConsensusMode, DEPTH_BUDGETS, ProvidersConfig, SegmentMemoryContext, Author } from "./types.js";
+import { Revision, Topic, DiscussionMode, DiscussionBudget, ConsensusMode, DEPTH_BUDGETS, MIN_PROPOSALS_BY_TARGET, TargetCondition, DiscussionPausedPayload, ProvidersConfig, SegmentMemoryContext, Author } from "./types.js";
 import { analyzeTopics, analyzeDiscussion } from "./analysis.js";
 import { detectQuestionEvolution } from "./question-evolution.js";
+import type { EvalVerdict } from "./consensus-evaluator.js";
 import type { RunResult } from "./test-modes.js";
 
 type PhaseInjectable    = { setPhaseInstruction: (s: string) => void };
@@ -36,6 +37,8 @@ export class LiveOrchestrator {
   private lastSentRevCount = 0;
   private onGoalsDone?: (result: RunResult) => void;
   private decidedGoalRevIds = new Set<number>();
+  // 최초 합의가 기록된 goalRevId 집합 — 중복 방지
+  private initialConsensusRecordedGoalIds = new Set<number>();
 
   // Run lifecycle — 종료 후 in-flight worker 응답 폐기용
   private activeRunId = "";   // setupWorkers마다 갱신; stopRun 시 "" 로 무효화
@@ -292,7 +295,7 @@ export class LiveOrchestrator {
 
   /**
    * question_evolution 모드 전용 — 라운드 완료 후 질문 변화 감지.
-   * proposals >= 4이면 detectQuestionEvolution 실행; reframed/shifted/transformed 감지 시 종료.
+   * MIN_PROPOSALS 충족 후 detectQuestionEvolution 실행; reframed/shifted/transformed 시 종료.
    */
   private checkQuestionDrift(goalRevId: number): void {
     if (!this.evalBudget || this.evalBudget.targetCondition !== "question_drift") return;
@@ -300,7 +303,10 @@ export class LiveOrchestrator {
 
     const state = this.store.rebuildState();
     const topic = state.topics.find(t => t.startRevId === goalRevId);
-    if (!topic || topic.proposals.length < 4) return;
+    if (!topic) return;
+
+    const minProposals = MIN_PROPOSALS_BY_TARGET["question_drift"];
+    if (topic.proposals.length < Math.max(4, minProposals)) return;
 
     const actors = [...new Set(topic.proposals.map(p => p.author))] as Author[];
     const qe = detectQuestionEvolution(topic, topic.proposals, actors);
@@ -311,33 +317,115 @@ export class LiveOrchestrator {
       || qe.driftType === "transformed_topic";
     if (!hasDrift) return;
 
-    console.log(`[question_drift] detected driftType=${qe.driftType} percent=${qe.driftPercent}`);
+    console.log(`[question_drift] detected driftType=${qe.driftType} percent=${qe.driftPercent} proposals=${topic.proposals.length}`);
+    this.finalizeDiscussion(goalRevId, "question_drift_detected", "question_drift_detected");
+  }
+
+  // ─── 최초 합의 기록 (중복 방지) ────────────────────────────────────
+  private recordInitialConsensusOnce(goalRevId: number, winner: Revision): void {
+    if (this.initialConsensusRecordedGoalIds.has(goalRevId)) {
+      console.log("[target] initial consensus already recorded for this goal, skipping");
+      return;
+    }
+    this.initialConsensusRecordedGoalIds.add(goalRevId);
+    this.store.append("system", {
+      type: "initial_consensus_noted",
+      references: [winner.id],
+      payload: {
+        type:              "initial_consensus_noted",
+        selected:          (winner.patch.payload as { value: string }).value,
+        winner:            winner.author,
+        convergenceSource: "auto_evaluator",
+      },
+      rationale: "최초 합의 기록 — 토론 계속 진행 (selectedOption 설정, status 유지)",
+    });
+    console.log("[target] initial consensus recorded, discussion continues");
+  }
+
+  // ─── 최종 종료 (discussion_paused 기록 + stopRun + onGoalsDone) ────
+  private finalizeDiscussion(
+    goalRevId:   number,
+    reason:      string,
+    pauseReason: DiscussionPausedPayload["reason"],
+    rationale?:  string,
+  ): void {
+    if (this.decidedGoalRevIds.has(goalRevId)) return;
     this.decidedGoalRevIds.add(goalRevId);
     this.store.append("system", {
       type: "discussion_paused",
-      payload: { type: "discussion_paused", reason: "question_drift_detected" },
-      rationale: `질문 변화 감지 — ${qe.driftType} (이동률 ${qe.driftPercent}%)`,
+      payload: { type: "discussion_paused", reason: pauseReason },
+      rationale: rationale ?? `[target] 종료 조건 달성 — ${reason}`,
     });
-    this.stopRun("question_drift_detected");
+    this.stopRun(reason);
+    console.log(`[target] target condition reached, finalizing discussion { reason: "${reason}" }`);
     this.onGoalsDone?.(this.buildRunResult());
+  }
+
+  // ─── verdict → pauseReason 매핑 ────────────────────────────────────
+  private verdictToPauseReason(verdict: EvalVerdict): DiscussionPausedPayload["reason"] {
+    switch (verdict) {
+      case "stagnation":         return "stagnation";
+      case "soft_consensus":     return "soft_consensus";
+      case "convergence_freeze": return "discussion_exhausted";
+      case "pseudo_convergence": return "pseudo_convergence";
+      case "safety_limit":       return "safety_limit";
+      default:                   return "stagnation";
+    }
+  }
+
+  // ─── targetCondition별 종료 여부 결정 ──────────────────────────────
+  /**
+   * consensus 이외의 verdict에 대해, 현재 targetCondition에서 종료해야 하는지 판단.
+   * MIN_PROPOSALS 가드는 호출 전에 처리하므로 여기서는 판단 로직만 담는다.
+   */
+  private shouldTerminateForTarget(targetCondition: TargetCondition, verdict: EvalVerdict): boolean {
+    switch (targetCondition) {
+      case "first_consensus":
+        // consensus 이외 verdict (stagnation/freeze 등)는 모두 종료
+        return true;
+
+      case "structural_convergence":
+        // soft_consensus / pseudo / freeze / stagnation → 종료 (구조 수렴 달성)
+        return verdict === "soft_consensus"
+          || verdict === "pseudo_convergence"
+          || verdict === "convergence_freeze"
+          || verdict === "stagnation";
+
+      case "question_drift":
+        // 주 종료는 checkQuestionDrift(); 보조: 의미 수렴 또는 소진 시 허용
+        return verdict === "soft_consensus"
+          || verdict === "pseudo_convergence"
+          || verdict === "convergence_freeze"
+          || verdict === "stagnation";
+
+      case "exhaustive":
+        // deep_evolution: finalization 단계에서만 종료
+        return this.phaseController.isFinalization();
+    }
   }
 
   /**
    * Evaluator 실행 — 새 pair round가 완성됐을 때만 판정 실행.
-   * consensus / deadlock / safety_limit 결과에 따라 revision을 append한다.
+   *
+   * 모드별 종료 전략:
+   *  quick_conclusion     — 첫 consensus 즉시 종료 (MIN_PROPOSALS=2)
+   *  structural_convergence — consensus는 최초 합의 기록만, soft/pseudo/freeze/stag 후 종료 (MIN=8)
+   *  question_evolution   — consensus 기록만, checkQuestionDrift()가 주 종료 (MIN=8)
+   *  deep_evolution       — finalization 단계 도달 후에만 수렴 신호로 종료 (MIN=12)
    */
   private runEvaluator(goalRevId: number): void {
     if (this.terminated) return;
     if (!this.evaluator || !this.evalBudget) return;
     if (this.decidedGoalRevIds.has(goalRevId)) return;
 
-    const history = this.store.getHistory();
+    const history    = this.store.getHistory();
     const topicStart = history.findIndex(r => r.id === goalRevId);
     if (topicStart === -1) return;
     const topicRevs = history.slice(topicStart);
 
     const state = this.store.rebuildState();
     const topic = state.topics.find(t => t.startRevId === goalRevId);
+    // initial_consensus_noted는 status를 "active"로 유지하므로 여기서도 통과
     if (!topic || (topic.status !== "active" && topic.status !== "reopened")) return;
 
     const verdict = this.evaluator.maybeEvaluate(topicRevs, topic, this.evalBudget, this.evalAutoConsensus);
@@ -351,32 +439,22 @@ export class LiveOrchestrator {
       this.checkConsensusSaturation(goalRevId, topic);
       if (this.terminated) return;
     }
-
     if (verdict === "continue") return;
 
-    console.log(`[live] evaluator verdict=${verdict} round=${this.evaluator["pairCount"]} goalRevId=${goalRevId}`);
+    const targetCondition = this.evalBudget.targetCondition;
+    const proposalCount   = topic.proposals.length;
+    const pairCount       = this.evaluator.getPairCount();
+    const minProposals    = MIN_PROPOSALS_BY_TARGET[targetCondition];
+    const isForceTerminate = verdict === "safety_limit";
 
-    switch (verdict) {
-      case "consensus": {
-        this.decidedGoalRevIds.add(goalRevId);
-        const winner = selectByPolicy(topicRevs, history);
-        if (!winner) { this.decidedGoalRevIds.delete(goalRevId); return; }
-        this.store.append("system", {
-          type: "consensus_reached",
-          references: [winner.id],
-          payload: {
-            type:     "consensus_reached",
-            selected: (winner.patch.payload as { value: string }).value,
-            winner:   winner.author,
-            convergenceSource: "auto_evaluator",
-          },
-          rationale: "Evaluator: composite consensus conditions met",
-        });
-        break;
-      }
+    // ── 상세 로그 ──────────────────────────────────────────────────
+    const convHist   = this.evaluator.getConvergenceHistory();
+    const convScore  = (convHist[convHist.length - 1] ?? 0).toFixed(2);
+    console.log(`[target] evaluation { targetCondition="${targetCondition}" proposalCount=${proposalCount} minProposals=${minProposals} pairCount=${pairCount} verdict="${verdict}" isFinalization=${this.phaseController.isFinalization()} convergenceScore=${convScore} shouldCheckTerminate=${!isForceTerminate && proposalCount < minProposals ? "false(belowMin)" : "true"} }`);
 
-      case "deadlock": {
-        if (this.deadlockWarned.has(goalRevId)) return;
+    // ── deadlock: 기록만, 종료 없음 ────────────────────────────────
+    if (verdict === "deadlock") {
+      if (!this.deadlockWarned.has(goalRevId)) {
         this.deadlockWarned.add(goalRevId);
         this.store.append("system", {
           type: "discussion_deadlock",
@@ -384,126 +462,105 @@ export class LiveOrchestrator {
             type:   "discussion_deadlock",
             reason: "교착 상태: AI들이 서로 다른 입장을 유지하고 있습니다. 최근 양보 없음.",
           },
-          rationale: `sameLeaderRounds=${this.evaluator["sameLeaderRounds"]} pairCount=${this.evaluator["pairCount"]}`,
+          rationale: `sameLeaderRounds=${this.evaluator["sameLeaderRounds"]} pairCount=${pairCount}`,
         });
-        break;
       }
-
-      case "safety_limit": {
-        if (!this.evalBudget.safetyLimitEnabled) {
-          console.log(`[safety] limit reached but disabled — continuing (round=${this.evaluator["pairCount"]})`);
-          break;
-        }
-        console.log(`[safety] limit reached { reason: "maxRoundsPerWorker", limit: ${this.evalBudget.maxRoundsPerWorker} }`);
-        this.decidedGoalRevIds.add(goalRevId);
-        this.store.append("system", {
-          type: "discussion_paused",
-          payload: { type: "discussion_paused", reason: "safety_limit" },
-          rationale: `안전 한도 도달 — maxRoundsPerWorker=${this.evalBudget.maxRoundsPerWorker}`,
-        });
-        this.stopRun("safety_limit");
-        this.onGoalsDone?.(this.buildRunResult());
-        break;
-      }
-
-      case "stagnation": {
-        const pc = this.evaluator.getPairCount();
-        console.log(`[evaluator] stagnation detected (round=${pc}, phase="${this.phaseController.getCurrentPhase()}")`);
-        // finalization 이전 단계면 phase를 강제로 진행 (loop 종료 대신)
-        if (!this.phaseController.isFinalization()) {
-          const forced = this.phaseController.forceAdvance(pc, "stagnation");
-          if (forced) {
-            this.applyPhaseTransition();
-            console.log(`[phase] stagnation → advanced to "${this.phaseController.getCurrentPhase()}"`);
-            break; // 토론 계속
-          }
-        }
-        // finalization에서 stagnation → 종료
-        this.decidedGoalRevIds.add(goalRevId);
-        this.store.append("system", {
-          type: "discussion_paused",
-          payload: { type: "discussion_paused", reason: "stagnation" },
-          rationale: `새 논거 소진 — ${pc}라운드 동안 novelty 고갈 (finalization 단계)`,
-        });
-        this.stopRun("stagnation");
-        this.onGoalsDone?.(this.buildRunResult());
-        break;
-      }
-
-      case "convergence_freeze": {
-        const pcf = this.evaluator.getPairCount();
-        console.log(`[evaluator] convergence_freeze detected (round=${pcf}, phase="${this.phaseController.getCurrentPhase()}")`);
-        if (!this.phaseController.isFinalization()) {
-          const forced = this.phaseController.forceAdvance(pcf, "stagnation");
-          if (forced) {
-            this.applyPhaseTransition();
-            console.log(`[phase] convergence_freeze → advanced to "${this.phaseController.getCurrentPhase()}"`);
-            break;
-          }
-        }
-        this.decidedGoalRevIds.add(goalRevId);
-        const convHistF  = this.evaluator.getConvergenceHistory();
-        const convScoreF = (convHistF[convHistF.length - 1] ?? 0).toFixed(2);
-        this.store.append("system", {
-          type: "discussion_paused",
-          payload: { type: "discussion_paused", reason: "discussion_exhausted" },
-          rationale: `novelty 소진 + entropy 붕괴 — Jaccard=${convScoreF} (${pcf}라운드, finalization)`,
-        });
-        this.stopRun("convergence_freeze");
-        this.onGoalsDone?.(this.buildRunResult());
-        break;
-      }
-
-      case "soft_consensus": {
-        const pc2 = this.evaluator.getPairCount();
-        console.log(`[evaluator] soft_consensus detected (round=${pc2}, phase="${this.phaseController.getCurrentPhase()}")`);
-        if (!this.phaseController.isFinalization()) {
-          const forced = this.phaseController.forceAdvance(pc2, "soft_consensus");
-          if (forced) {
-            this.applyPhaseTransition();
-            console.log(`[phase] soft_consensus → advanced to "${this.phaseController.getCurrentPhase()}"`);
-            break; // 토론 계속
-          }
-        }
-        // finalization에서 soft_consensus → 종료
-        this.decidedGoalRevIds.add(goalRevId);
-        const convHist2  = this.evaluator.getConvergenceHistory();
-        const convScore2 = (convHist2[convHist2.length - 1] ?? 0).toFixed(2);
-        this.store.append("system", {
-          type: "discussion_paused",
-          payload: { type: "discussion_paused", reason: "soft_consensus" },
-          rationale: `의미 수렴 감지 — actor간 Jaccard=${convScore2} (finalization 단계)`,
-        });
-        this.stopRun("soft_consensus");
-        this.onGoalsDone?.(this.buildRunResult());
-        break;
-      }
-
-      case "pseudo_convergence": {
-        const pcP = this.evaluator.getPairCount();
-        console.log(`[evaluator] pseudo_convergence detected (round=${pcP}, phase="${this.phaseController.getCurrentPhase()}")`);
-        if (!this.phaseController.isFinalization()) {
-          const forced = this.phaseController.forceAdvance(pcP, "soft_consensus");
-          if (forced) {
-            this.applyPhaseTransition();
-            console.log(`[phase] pseudo_convergence → advanced to "${this.phaseController.getCurrentPhase()}"`);
-            break; // 다음 단계로 진행
-          }
-        }
-        // finalization에서 pseudo_convergence → 종료
-        this.decidedGoalRevIds.add(goalRevId);
-        const convHistP  = this.evaluator.getConvergenceHistory();
-        const convScoreP = (convHistP[convHistP.length - 1] ?? 0).toFixed(2);
-        this.store.append("system", {
-          type: "discussion_paused",
-          payload: { type: "discussion_paused", reason: "pseudo_convergence" },
-          rationale: `Semantic Loop 감지 — 표면 불일치 이면에 구조 수렴 (Jaccard=${convScoreP}, round=${pcP})`,
-        });
-        this.stopRun("pseudo_convergence");
-        this.onGoalsDone?.(this.buildRunResult());
-        break;
-      }
+      return;
     }
+
+    // ── safety_limit: 항상 종료 (최소 proposal 무관) ───────────────
+    if (verdict === "safety_limit") {
+      if (!this.evalBudget.safetyLimitEnabled) {
+        console.log(`[safety] limit reached but disabled — continuing (round=${pairCount})`);
+        return;
+      }
+      console.log(`[safety] limit reached { reason: "maxRoundsPerWorker", limit: ${this.evalBudget.maxRoundsPerWorker} }`);
+      this.finalizeDiscussion(
+        goalRevId, "safety_limit", "safety_limit",
+        `안전 한도 도달 — maxRoundsPerWorker=${this.evalBudget.maxRoundsPerWorker}`,
+      );
+      return;
+    }
+
+    // ── consensus: 모드별 분기 ─────────────────────────────────────
+    if (verdict === "consensus") {
+      const winner = selectByPolicy(topicRevs, history);
+      if (!winner) return;
+
+      if (targetCondition === "first_consensus" && proposalCount >= minProposals) {
+        // quick_conclusion: 첫 합의로 최종 종료
+        this.decidedGoalRevIds.add(goalRevId);
+        this.store.append("system", {
+          type: "consensus_reached",
+          references: [winner.id],
+          payload: {
+            type:              "consensus_reached",
+            selected:          (winner.patch.payload as { value: string }).value,
+            winner:            winner.author,
+            convergenceSource: "auto_evaluator",
+          },
+          rationale: "Evaluator: first_consensus target reached",
+        });
+        console.log("[target] target condition reached, finalizing discussion { reason: \"first_consensus\" }");
+        // decided gate가 설정됐으므로 worker는 차단됨 → 자연 종료(pending→0)
+      } else {
+        // quick_conclusion 미만 proposal 수 / 또는 다른 모드: 최초 합의 기록 후 계속
+        this.recordInitialConsensusOnce(goalRevId, winner);
+        console.log("[target] initial consensus recorded, discussion continues");
+      }
+      return;
+    }
+
+    // ── MIN_PROPOSALS 미충족: phase 전환 시도 후 계속 ──────────────
+    if (!isForceTerminate && proposalCount < minProposals) {
+      const isConvergenceSignal = verdict === "stagnation"
+        || verdict === "soft_consensus"
+        || verdict === "convergence_freeze"
+        || verdict === "pseudo_convergence";
+      if (isConvergenceSignal && !this.phaseController.isFinalization()) {
+        const hint = (verdict === "soft_consensus" || verdict === "pseudo_convergence")
+          ? "soft_consensus" : "stagnation";
+        const forced = this.phaseController.forceAdvance(pairCount, hint);
+        if (forced) {
+          this.applyPhaseTransition();
+          console.log(`[phase] ${verdict} (belowMin proposals=${proposalCount}<${minProposals}) → advanced to "${this.phaseController.getCurrentPhase()}"`);
+        }
+      }
+      console.log(`[target] below minProposals=${minProposals} (current=${proposalCount}), continuing`);
+      return;
+    }
+
+    // ── MIN_PROPOSALS 충족 / 이상: targetCondition별 종료 판단 ────
+    const shouldTerminate = this.shouldTerminateForTarget(targetCondition, verdict);
+
+    if (!shouldTerminate) {
+      // deep_evolution에서 finalization 이전: phase 전환 시도
+      const isConvergenceSignal2 = verdict === "stagnation"
+        || verdict === "soft_consensus"
+        || verdict === "convergence_freeze"
+        || verdict === "pseudo_convergence";
+      if (isConvergenceSignal2 && !this.phaseController.isFinalization()) {
+        const hint2 = (verdict === "soft_consensus" || verdict === "pseudo_convergence")
+          ? "soft_consensus" : "stagnation";
+        const forced2 = this.phaseController.forceAdvance(pairCount, hint2);
+        if (forced2) {
+          this.applyPhaseTransition();
+          console.log(`[phase] ${verdict} → advanced to "${this.phaseController.getCurrentPhase()}"`);
+        }
+      }
+      return;
+    }
+
+    // ── 최종 종료 ──────────────────────────────────────────────────
+    const pauseReason = this.verdictToPauseReason(verdict);
+    const rationale   = (() => {
+      if (verdict === "convergence_freeze")
+        return `novelty 소진 + entropy 붕괴 — Jaccard=${convScore} (${pairCount}라운드)`;
+      if (verdict === "soft_consensus" || verdict === "pseudo_convergence")
+        return `의미 수렴 감지 — actor간 Jaccard=${convScore} (${pairCount}라운드, targetCondition=${targetCondition})`;
+      return `${verdict} 감지 — (${pairCount}라운드, targetCondition=${targetCondition})`;
+    })();
+    this.finalizeDiscussion(goalRevId, verdict, pauseReason, rationale);
   }
 
   private activeWorkerNames: string[] = [];
@@ -512,6 +569,7 @@ export class LiveOrchestrator {
     this.lastSentRevCount  = 0;
     this.decidedGoalRevIds.clear();
     this.deadlockWarned.clear();
+    this.initialConsensusRecordedGoalIds.clear();
     this.phaseController.reset();
     this.phaseableWorkers        = [];
     this.memoryInjectableWorkers = [];

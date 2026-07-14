@@ -78,6 +78,14 @@ export const DEPTH_BUDGETS: Record<DiscussionDepth, DiscussionBudget> = {
   deep_evolution:        { maxRoundsPerWorker: 30, maxDistinctProposals: 5, stabilityMode: true,  safetyTimeoutMs: 30 * 60 * 1000, safetyLimitEnabled: true, targetCondition: "exhaustive"            },
 };
 
+/** 모드별 최소 proposal 수 — 이 수를 충족하기 전에는 force-terminate 외 종료 불가 */
+export const MIN_PROPOSALS_BY_TARGET: Record<TargetCondition, number> = {
+  first_consensus:        2,
+  structural_convergence: 8,
+  question_drift:         8,
+  exhaustive:             12,
+};
+
 export const DEPTH_LABELS: Record<DiscussionDepth, string> = {
   quick_conclusion:       "빠른 결론",
   structural_convergence: "구조 수렴까지",
@@ -134,6 +142,18 @@ export interface ConsensusReachedPayload {
   isMockAffected?: boolean;
 }
 
+/**
+ * 최초 합의 기록 — selectedOption 설정만 수행, topic.status는 "active" 유지.
+ * quick_conclusion 이외 모드에서 첫 consensus 감지 시 append.
+ * 이후 targetCondition 달성 시 discussion_paused로 최종 종료.
+ */
+export interface InitialConsensusNotedPayload {
+  type:              "initial_consensus_noted";
+  selected:          string;
+  winner:            Author;
+  convergenceSource: ConvergenceSource;
+}
+
 export interface UserOverridePayload {
   type: "user_override";
   goal?: string;
@@ -180,6 +200,7 @@ export type TypedPayload =
   | ProposeAlternativePayload
   | SelectOptionPayload
   | ConsensusReachedPayload
+  | InitialConsensusNotedPayload
   | UserOverridePayload
   | UserInterjectionPayload
   | DiscussionPausedPayload

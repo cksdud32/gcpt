@@ -1,4 +1,4 @@
-import { Author, Patch, Revision, State, ProposeDecisionPayload, ProposeAlternativePayload, DiscussionSegment } from "./types.js";
+import { Author, Patch, Revision, State, ProposeDecisionPayload, ProposeAlternativePayload, DiscussionSegment, InitialConsensusNotedPayload } from "./types.js";
 
 type Subscriber = (revision: Revision) => void | Promise<void>;
 
@@ -145,6 +145,31 @@ export class RevisionStore {
             const curSeg = t.segments[t.segments.length - 1];
             if (curSeg) curSeg.proposalRevisionIds.push(rev.id);
           }
+          break;
+        }
+
+        // initial_consensus_noted: selectedOption 설정, status는 "active" 유지
+        case "initial_consensus_noted": {
+          const targetId2 = references?.[0];
+          const target2   = targetId2 !== undefined ? this.revisions.find(r => r.id === targetId2) : undefined;
+          const tp2       = target2?.patch.payload;
+          if (!tp2 || (tp2.type !== "propose_decision" && tp2.type !== "propose_alternative") || !target2) break;
+
+          const tidx2 = this.revisions.indexOf(target2);
+          let ownerSRId2: number | null = null;
+          for (let i = tidx2; i >= 0; i--) {
+            if (this.revisions[i].patch.payload.type === "set_goal") { ownerSRId2 = this.revisions[i].id; break; }
+          }
+          const ownerTopic2 = state.topics.find(t => t.startRevId === ownerSRId2);
+          if (!ownerTopic2 || ownerTopic2.selectedOption !== null) break;
+
+          ownerTopic2.selectedOption = {
+            revisionId:        rev.id,
+            selectedBy:        rev.author,
+            content:           tp2 as ProposeDecisionPayload | ProposeAlternativePayload,
+            convergenceSource: (payload as InitialConsensusNotedPayload).convergenceSource,
+          };
+          // status는 "active" 유지 — 토론 계속
           break;
         }
 
