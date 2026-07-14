@@ -143,7 +143,11 @@ export class ConversationOrchestrator {
       this.onStatus(`${worker.name} 응답 중...`);
       console.log(`[ConvOrch] turn ${turn + 1}/${maxTurns}  speaker=${worker.name}`);
 
-      await worker.chatReply(this.store, goalRevId, this.metrics);
+      try {
+        await worker.chatReply(this.store, goalRevId, this.metrics);
+      } catch (error) {
+        this.onStatus(error instanceof Error ? error.message : "AI 요청을 처리하지 못했습니다.");
+      }
       this.pushUpdate();
       this.onStatus("");
 

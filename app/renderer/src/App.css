@@ -3442,6 +3442,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
 }
+.settings-test-mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.settings-test-mode small { display: block; margin-top: 3px; color: var(--text-muted); }
+.settings-test-mode input { width: 18px; height: 18px; }
 .settings-provider-card {
   border: 1px solid var(--border);
   border-radius: 22px;

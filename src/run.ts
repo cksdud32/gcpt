@@ -1,7 +1,6 @@
 import { RevisionStore } from "./RevisionStore.js";
 import { MockGPTWorker, MockClaudeWorker, MockUserWorker } from "./orchestrator.js";
 import { RealGPTWorker } from "./workers/gpt.js";
-import { RealClaudeWorker } from "./workers/claude.js";
 import { createMetrics, printMetrics } from "./metrics.js";
 import * as fs from "fs";
 
@@ -36,8 +35,8 @@ console.log(`Claude 호출 상한: ${MAX_CLAUDE_CALLS}회`);
 // ─── 세팅 ─────────────────────────────────────────────────────────
 
 const store  = new RevisionStore();
-const gpt    = OPENAI_KEY    ? new RealGPTWorker(OPENAI_KEY, store, metrics)       : new MockGPTWorker(store);
-const claude = ANTHROPIC_KEY ? new RealClaudeWorker(ANTHROPIC_KEY, store, metrics) : new MockClaudeWorker(store);
+const gpt    = OPENAI_KEY    ? new RealGPTWorker("gpt", { enabled: true, apiKey: OPENAI_KEY, model: "gpt-5-mini", endpoint: "https://api.openai.com/v1/chat/completions" }, store, metrics) : new MockGPTWorker(store);
+const claude = ANTHROPIC_KEY ? new RealGPTWorker("claude", { enabled: true, apiKey: ANTHROPIC_KEY, model: "claude-haiku-4-5-20251001", endpoint: "https://api.anthropic.com/v1/messages" }, store, metrics) : new MockClaudeWorker(store);
 const user   = new MockUserWorker(store);
 
 let pending = 0;

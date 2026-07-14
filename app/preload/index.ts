@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { RunResult } from "../../src/test-modes";
-import type { Revision, Topic, DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, InteractionStyle } from "../../src/types";
+import type { Revision, Topic, DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, ProviderName, InteractionStyle } from "../../src/types";
 import type { WorkspacePlan } from "../../src/workspace-providers";
 
 type DiscussionUpdate = { history: Revision[]; topics: Topic[] };
@@ -91,7 +91,7 @@ contextBridge.exposeInMainWorld("api", {
   saveProviderSettings: (settings: ProvidersConfig): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke("provider:saveSettings", settings),
 
-  testProviderConnection: (provider: "gpt" | "claude" | "gemini"): Promise<{ ok: boolean; latency?: number; error?: string }> =>
+  testProviderConnection: (provider: ProviderName): Promise<{ ok: boolean; latency?: number; error?: string }> =>
     ipcRenderer.invoke("provider:testConnection", provider),
 
   // 최초 실행 이벤트 — API 키가 설정되지 않은 상태로 앱이 처음 시작될 때

@@ -1,7 +1,6 @@
 import { RevisionStore } from "./RevisionStore.js";
 import { RealGPTWorker } from "./workers/gpt.js";
-import { RealClaudeWorker } from "./workers/claude.js";
-import { RealGeminiWorker } from "./workers/gemini.js";
+import { createDefaultProviders, PROVIDER_LABELS, PROVIDER_NAMES } from "./provider-config.js";
 import { createMetrics } from "./metrics.js";
 import { selectByPolicy } from "./policy.js";
 import { ConsensusEvaluator } from "./consensus-evaluator.js";
@@ -530,59 +529,20 @@ export class LiveOrchestrator {
     const effectiveBudget = this.toEffectiveBudget(this.baseBudget);
 
     // Provider 상태 스냅샷 로그 (버그 추적용)
-    console.log("[providers] settings snapshot:", {
-      gpt:    { enabled: providers.gpt.enabled,    hasKey: !!providers.gpt.apiKey,    model: providers.gpt.model },
-      claude: { enabled: providers.claude.enabled, hasKey: !!providers.claude.apiKey, model: providers.claude.model },
-      gemini: { enabled: providers.gemini.enabled, hasKey: !!providers.gemini.apiKey, model: providers.gemini.model },
-    });
+    console.log("[providers] settings snapshot:", Object.fromEntries(PROVIDER_NAMES.map(name => [name, { enabled: providers[name].enabled, hasKey: !!providers[name].apiKey, model: providers[name].model }])));
     console.log("[budget] effective", this.formatBudgetForLog(effectiveBudget));
 
     type WorkerHandle = { handle: (rev: Revision, id: number | null) => Promise<void> };
     const workerEntries: Array<{ name: string; author: string; worker: WorkerHandle }> = [];
 
-    if (providers.gpt.enabled) {
-      if (!providers.gpt.apiKey.trim()) {
-        console.warn("[provider] skipping worker — missing API key", { provider: "gpt", enabled: true, model: providers.gpt.model });
-      } else {
-        console.log("[provider] creating worker", { provider: "gpt", enabled: true, hasKey: true, model: providers.gpt.model });
-        const w = new RealGPTWorker(providers.gpt.apiKey, this.store, this.metrics, effectiveBudget, providers.gpt.model);
-        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-        workerEntries.push({ name: "GPT", author: "gpt", worker: w });
-      }
-    } else {
-      console.log("[provider] skipping worker", { provider: "gpt", enabled: false });
-    }
-
-    if (providers.claude.enabled) {
-      if (!providers.claude.apiKey.trim()) {
-        console.warn("[provider] skipping worker — missing API key", { provider: "claude", enabled: true, model: providers.claude.model });
-      } else {
-        console.log("[provider] creating worker", { provider: "claude", enabled: true, hasKey: true, model: providers.claude.model });
-        const w = new RealClaudeWorker(providers.claude.apiKey, this.store, this.metrics, effectiveBudget, providers.claude.model);
-        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-        workerEntries.push({ name: "Claude", author: "claude", worker: w });
-      }
-    } else {
-      console.log("[provider] skipping worker", { provider: "claude", enabled: false });
-    }
-
-    if (providers.gemini.enabled) {
-      if (!providers.gemini.apiKey.trim()) {
-        console.warn("[provider] skipping worker — missing API key", { provider: "gemini", enabled: true, model: providers.gemini.model });
-      } else {
-        console.log("[provider] creating worker", { provider: "gemini", enabled: true, hasKey: true, model: providers.gemini.model });
-        const w = new RealGeminiWorker(providers.gemini.apiKey, this.store, this.metrics, effectiveBudget, providers.gemini.model);
-        if ("setPhaseInstruction" in w) this.phaseableWorkers.push(w as PhaseInjectable);
-        if ("setMemoryContext"    in w) this.memoryInjectableWorkers.push(w as MemoryInjectable);
-        if ("setDiscussionBudget" in w) this.budgetInjectableWorkers.push(w as BudgetInjectable);
-        workerEntries.push({ name: "Gemini", author: "gemini", worker: w });
-      }
-    } else {
-      console.log("[provider] skipping worker", { provider: "gemini", enabled: false });
+    for (const provider of PROVIDER_NAMES) {
+      const config = providers[provider];
+      if (!config.enabled) continue;
+      const w = new RealGPTWorker(provider, config, this.store, this.metrics, effectiveBudget, providers.testMode, message => this.onStatus(message));
+      this.phaseableWorkers.push(w);
+      this.memoryInjectableWorkers.push(w);
+      this.budgetInjectableWorkers.push(w);
+      workerEntries.push({ name: `${PROVIDER_LABELS[provider]}${providers.testMode ? " (Test)" : ""}`, author: provider, worker: w });
     }
 
     if (workerEntries.length < 2) {
@@ -804,15 +764,15 @@ export class LiveOrchestrator {
     this.onGoalsDone = onGoalsDone;
 
     // providers가 없으면 env var 기반 기본값 사용 (하위 호환)
-    const resolvedProviders: ProvidersConfig = providers ?? {
-      gpt:    { enabled: true,  apiKey: process.env.OPENAI_API_KEY ?? "",    model: "gpt-4o-mini" },
-      claude: { enabled: !process.env.GEMINI_API_KEY && !providers, apiKey: process.env.ANTHROPIC_API_KEY ?? "", model: "claude-haiku-4-5-20251001" },
-      gemini: { enabled: !!process.env.GEMINI_API_KEY, apiKey: process.env.GEMINI_API_KEY ?? "", model: "gemini-2.5-flash" },
-    };
+    const defaults = createDefaultProviders();
+    defaults.gpt = { ...defaults.gpt, enabled: true, apiKey: process.env.OPENAI_API_KEY ?? "", model: "gpt-4o-mini" };
+    defaults.claude = { ...defaults.claude, enabled: !process.env.GEMINI_API_KEY, apiKey: process.env.ANTHROPIC_API_KEY ?? "" };
+    defaults.gemini = { ...defaults.gemini, enabled: !!process.env.GEMINI_API_KEY, apiKey: process.env.GEMINI_API_KEY ?? "" };
+    const resolvedProviders: ProvidersConfig = providers ?? defaults;
 
     this.setupWorkers(budget, consensusMode === "auto", resolvedProviders);
 
-    const isRealApi = Object.values(resolvedProviders).some(p => p.enabled && p.apiKey);
+    const isRealApi = !resolvedProviders.testMode && [resolvedProviders.gpt, resolvedProviders.claude, resolvedProviders.gemini].some(p => p.enabled && p.apiKey);
     const goalTimeoutMs = isRealApi ? 90_000 : 20_000;
     // safetyLimitEnabled=false → goal timeout 무제한 (main hard timeout에 의존)
     const effectiveGoalTimeoutMs = budget.safetyLimitEnabled ? goalTimeoutMs : Infinity;

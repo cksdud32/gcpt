@@ -1,6 +1,6 @@
 import { RevisionStore } from "./RevisionStore.js";
 import { MockGPTWorker, MockClaudeWorker, MockUserWorker, MOCK_CONFIGS, MockConfig } from "./orchestrator.js";
-import { RealGeminiWorker } from "./workers/gemini.js";
+import { RealGPTWorker } from "./workers/gpt.js";
 import { createMetrics, printMetrics, Metrics } from "./metrics.js";
 import type { Topic, Revision, DiscussionMode, DiscussionAnalysis } from "./types.js";
 
@@ -50,7 +50,7 @@ async function runWithGoals(
   const claudeWorker = geminiKey
     ? (() => {
         if (!silent) console.log("[Worker] Gemini API 키 감지 → RealGeminiWorker 사용");
-        return new RealGeminiWorker(geminiKey, store, metrics);
+        return new RealGPTWorker("gemini", { enabled: true, apiKey: geminiKey, model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash", endpoint: "https://generativelanguage.googleapis.com/v1beta" }, store, metrics);
       })()
     : new MockClaudeWorker(store, metrics, config);
 

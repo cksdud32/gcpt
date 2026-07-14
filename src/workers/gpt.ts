@@ -1,7 +1,7 @@
-import OpenAI from "openai";
 import { RevisionStore } from "../RevisionStore.js";
-import { Revision, DiscussionBudget, DEPTH_BUDGETS, StanceAction } from "../types.js";
+import { Revision, DiscussionBudget, DEPTH_BUDGETS, StanceAction, ProviderName, ProviderSettings, Author } from "../types.js";
 import { Metrics } from "../metrics.js";
+import { executeProviderRequest, normalizeApiError } from "../provider-runtime.js";
 import { getModeInstruction } from "./mode-instruction.js";
 import {
   findCurrentSegmentStartRevId,
@@ -65,7 +65,6 @@ CRITICAL LANGUAGE RULE — strictly follow:
 - Never mix languages within a single field.`;
 
 export class RealGPTWorker {
-  private client: OpenAI;
   private spokenAt = new Map<number, number>();
   private respondedInterjections = new Set<number>(); // interjection rev.id
   private maxPerTopic: number;
@@ -83,14 +82,13 @@ export class RealGPTWorker {
     return this.phaseInstruction ? `\n${this.phaseInstruction}\n` : "";
   }
 
-  constructor(apiKey: string, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget, private model = "gpt-5-mini") {
-    this.client = new OpenAI({ apiKey });
+  constructor(private provider: ProviderName, private config: ProviderSettings, private store: RevisionStore, private metrics?: Metrics, budget?: DiscussionBudget, private testMode = false, private onError?: (message: string) => void) {
     this.maxPerTopic         = budget?.maxRoundsPerWorker   ?? DEPTH_BUDGETS.structural_convergence.maxRoundsPerWorker;
     this.maxDistinctProposals = budget?.maxDistinctProposals ?? DEPTH_BUDGETS.structural_convergence.maxDistinctProposals;
   }
 
   async handle(rev: Revision, capturedGoalRevId: number | null): Promise<void> {
-    if (rev.author === "gpt" || capturedGoalRevId === null) return;
+    if (rev.author === this.provider || capturedGoalRevId === null) return;
 
     const type = rev.patch.payload.type;
     const history = this.store.getHistory();
@@ -141,15 +139,15 @@ export class RealGPTWorker {
       this.spokenAt.set(capturedGoalRevId, count + 1);
       rollback = () => this.spokenAt.set(capturedGoalRevId, count);
 
-    } else if (type === "propose_alternative" && (rev.author === "claude" || rev.author === "gemini")) {
+    } else if (type === "propose_alternative" && rev.author !== "user" && rev.author !== "system") {
       const count = this.spokenAt.get(capturedGoalRevId) ?? 0;
       if (count >= this.maxPerTopic) return;
       const p = rev.patch.payload as { value: string; reason: string };
       const ctx = buildSegmentContext(this.store, capturedGoalRevId, segmentStartRevId, this.memoryContext);
-      const counterName = rev.author === "gemini" ? "Gemini" : "Claude";
+      const counterName = rev.author;
 
       // 내 이전 발언 파악 → defend/concede/propose 계층 prompt (현재 세그먼트만)
-      const myPrior = getSegmentPriorProposals(this.store, "gpt", capturedGoalRevId, segmentStartRevId);
+      const myPrior = getSegmentPriorProposals(this.store, this.provider as Author, capturedGoalRevId, segmentStartRevId);
       const myLast  = myPrior[myPrior.length - 1];
       const distinctCount = new Set(myPrior.map(p => p.value.trim().toLowerCase())).size;
       const limitReached  = distinctCount >= this.maxDistinctProposals;
@@ -194,26 +192,27 @@ export class RealGPTWorker {
 
     const t0 = Date.now();
     try {
-      const res = await this.client.chat.completions.create({
-        model: this.model,
-        max_tokens: 512,
+      const requestPrompt = `${prompt}\n\nOutput JSON only (no prose, no code fences):\n{"value":"...","reason":"...","rationale":"...","stanceAction":"defend|refine|concede|propose"}`;
+      const res = await executeProviderRequest({
+        provider: this.provider,
+        config: this.config,
+        prompt: requestPrompt,
+        testMode: this.testMode,
+        maxTokens: 512,
         temperature: 0.7,
         messages: [
           { role: "system", content: SYSTEM },
-          {
-            role: "user",
-            content: `${prompt}\n\nOutput JSON only (no prose, no code fences):\n{"value":"...","reason":"...","rationale":"...","stanceAction":"defend|refine|concede|propose"}`,
-          },
+          { role: "user", content: requestPrompt },
         ],
       });
 
       if (this.metrics) {
         this.metrics.latencyMs.push(Date.now() - t0);
-        this.metrics.tokens.prompt     += res.usage?.prompt_tokens ?? 0;
-        this.metrics.tokens.completion += res.usage?.completion_tokens ?? 0;
+        this.metrics.tokens.prompt     += res.promptTokens ?? 0;
+        this.metrics.tokens.completion += res.completionTokens ?? 0;
       }
 
-      const raw = res.choices[0]?.message?.content ?? "";
+      const raw = res.text;
       const parsed = parseResponse(raw);
 
       if (!parsed) {
@@ -231,15 +230,17 @@ export class RealGPTWorker {
         return;
       }
 
-      console.log("[worker append]", { expectedAuthor: "gpt", provider: "gpt", type: patchType, value: parsed.value.slice(0, 30) });
-      this.store.append("gpt", {
+      console.log("[worker append]", { expectedAuthor: this.provider, provider: this.provider, type: patchType, value: parsed.value.slice(0, 30) });
+      this.store.append(this.provider, {
         type: patchType,
         references: refs,
         payload: { type: patchType, value: parsed.value, reason: parsed.reason, stanceAction: parsed.stanceAction },
         rationale: parsed.rationale || undefined,
       });
     } catch (err) {
-      console.error(`[GPT] apiError (goalRevId=${capturedGoalRevId}):`, err instanceof Error ? err.message : err);
+      const normalized = normalizeApiError(err);
+      console.error(`[${this.provider}] apiError (goalRevId=${capturedGoalRevId}):`, normalized.message);
+      this.onError?.(normalized.message);
       if (this.metrics) this.metrics.calls.gpt.apiError++;
       rollback();
     }

@@ -1,4 +1,4 @@
-export type Author = "user" | "gpt" | "claude" | "gemini" | "system";
+export type Author = "user" | ProviderName | "system";
 
 // ─── Provider Settings ────────────────────────────────────────────
 
@@ -6,18 +6,35 @@ export interface ProviderSettings {
   enabled: boolean;
   apiKey:  string;
   model:   string;
+  apiName?: string;
+  endpoint?: string;
+  authMethod?: "bearer" | "api-key" | "custom-header";
+  customHeader?: string;
+  /** Optional dot/bracket path used to extract text from a Custom API response. */
+  responsePath?: string;
 }
 
 export interface ProvidersConfig {
+  testMode: boolean;
   gpt:    ProviderSettings;
   claude: ProviderSettings;
   gemini: ProviderSettings;
+  grok: ProviderSettings;
+  glm: ProviderSettings;
+  deepseek: ProviderSettings;
+  custom: ProviderSettings;
 }
 
-export const DEFAULT_PROVIDER_MODELS: Record<keyof ProvidersConfig, string> = {
+export type ProviderName = Exclude<keyof ProvidersConfig, "testMode">;
+
+export const DEFAULT_PROVIDER_MODELS: Record<ProviderName, string> = {
   gpt:    "gpt-5-mini",
   claude: "claude-haiku-4-5-20251001",
   gemini: "gemini-2.5-flash",
+  grok: "grok-3-mini",
+  glm: "glm-4.5-flash",
+  deepseek: "deepseek-chat",
+  custom: "",
 };
 
 export type DiscussionMode = "general" | "development" | "idea";

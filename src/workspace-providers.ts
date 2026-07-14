@@ -1,8 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type { ProviderName, ProviderSettings } from "./types.js";
+import { executeProviderRequest } from "./provider-runtime.js";
 
 // ─── Types ────────────────────────────────────────────────────────
 
-export type WsProviderName = "claude" | "mock";
+export type WsProviderName = ProviderName | "mock";
 
 export interface WsLinkedContext {
   goal:          string;
@@ -44,12 +45,8 @@ export interface WorkspaceAIProvider {
 // ─── Claude Provider ──────────────────────────────────────────────
 
 export class ClaudeWorkspaceProvider implements WorkspaceAIProvider {
-  readonly name: WsProviderName = "claude";
-  private client: Anthropic;
-
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
-  }
+  readonly name: WsProviderName;
+  constructor(private provider: ProviderName, private config: ProviderSettings, private testMode = false) { this.name = provider; }
 
   async send(
     messages: { role: "user" | "assistant"; content: string }[],
@@ -70,16 +67,9 @@ export class ClaudeWorkspaceProvider implements WorkspaceAIProvider {
         (context.mode ? `\n- Mode: ${context.mode}` : "");
     }
 
-    const res = await this.client.messages.create({
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      system:     systemPrompt,
-      messages,
-    });
-
-    const block = res.content[0];
-    if (block.type !== "text") throw new Error("unexpected response type");
-    return block.text;
+    const prompt = messages.map(m => `${m.role}: ${m.content}`).join("\n\n");
+    const res = await executeProviderRequest({ provider: this.provider, config: this.config, testMode: this.testMode, prompt, maxTokens: 1024, messages: [{ role: "system", content: systemPrompt }, ...messages] });
+    return res.text;
   }
 
   async generatePlan(context?: WsLinkedContext): Promise<WorkspacePlan> {
@@ -97,18 +87,10 @@ export class ClaudeWorkspaceProvider implements WorkspaceAIProvider {
           : "")
       : "Generate a general workspace setup checklist.";
 
-    const res = await this.client.messages.create({
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      system:     sysPrompt,
-      messages:   [{ role: "user", content: userMsg }],
-    });
-
-    const block = res.content[0];
-    if (block.type !== "text") throw new Error("unexpected response type");
+    const res = await executeProviderRequest({ provider: this.provider, config: this.config, testMode: this.testMode, prompt: userMsg, maxTokens: 512, messages: [{ role: "system", content: sysPrompt }, { role: "user", content: userMsg }] });
 
     // 마크다운 코드 펜스 제거 후 첫 번째 JSON 객체 추출
-    let jsonText = block.text.trim();
+    let jsonText = res.text.trim();
     const fenceMatch = jsonText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
     if (fenceMatch) {
       jsonText = fenceMatch[1].trim();
@@ -132,7 +114,7 @@ export class ClaudeWorkspaceProvider implements WorkspaceAIProvider {
       steps:       raw.steps.map(s => ({ ...s, status: "pending" as const })),
       generatedAt: new Date().toLocaleTimeString(),
       linkedGoal:  context?.goal,
-      provider:    "claude",
+      provider:    this.provider,
     };
   }
 }
@@ -260,7 +242,11 @@ export class MockWorkspaceProvider implements WorkspaceAIProvider {
 // ─── Provider factory ─────────────────────────────────────────────
 
 export function makeClaudeProvider(apiKey: string): ClaudeWorkspaceProvider {
-  return new ClaudeWorkspaceProvider(apiKey);
+  return new ClaudeWorkspaceProvider("claude", { enabled: true, apiKey, model: "claude-haiku-4-5-20251001", endpoint: "https://api.anthropic.com/v1/messages" });
+}
+
+export function makeWorkspaceProvider(provider: ProviderName, config: ProviderSettings, testMode = false): ClaudeWorkspaceProvider {
+  return new ClaudeWorkspaceProvider(provider, config, testMode);
 }
 
 export function makeMockProvider(): MockWorkspaceProvider {

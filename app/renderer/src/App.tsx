@@ -184,7 +184,7 @@ declare global {
       // Provider Settings
       getProviderSettings: () => Promise<ProvidersConfig>;
       saveProviderSettings: (s: ProvidersConfig) => Promise<{ ok: boolean; error?: string }>;
-      testProviderConnection: (p: "gpt" | "claude" | "gemini") => Promise<{ ok: boolean; latency?: number; error?: string }>;
+      testProviderConnection: (p: "gpt" | "claude" | "gemini" | "grok" | "glm" | "deepseek" | "custom") => Promise<{ ok: boolean; latency?: number; error?: string }>;
       // Live Discussion
       startLiveDiscussion: (payload: {
         goals: string[];
@@ -900,23 +900,41 @@ interface ProviderSettings {
   enabled: boolean;
   apiKey:  string;
   model:   string;
+  apiName?: string;
+  endpoint?: string;
+  authMethod?: "bearer" | "api-key" | "custom-header";
+  customHeader?: string;
 }
 interface ProvidersConfig {
+  testMode: boolean;
   gpt:    ProviderSettings;
   claude: ProviderSettings;
   gemini: ProviderSettings;
+  grok: ProviderSettings;
+  glm: ProviderSettings;
+  deepseek: ProviderSettings;
+  custom: ProviderSettings;
 }
-type ProviderName = keyof ProvidersConfig;
+type ProviderName = Exclude<keyof ProvidersConfig, "testMode">;
 const DEFAULT_PROVIDERS: ProvidersConfig = {
+  testMode: false,
   gpt:    { enabled: false, apiKey: "", model: "gpt-5-mini" },
   claude: { enabled: false, apiKey: "", model: "claude-haiku-4-5-20251001" },
   gemini: { enabled: false, apiKey: "", model: "gemini-2.5-flash" },
+  grok: { enabled: false, apiKey: "", model: "grok-3-mini", endpoint: "https://api.x.ai/v1/chat/completions" },
+  glm: { enabled: false, apiKey: "", model: "glm-4.5-flash", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions" },
+  deepseek: { enabled: false, apiKey: "", model: "deepseek-chat", endpoint: "https://api.deepseek.com/chat/completions" },
+  custom: { enabled: false, apiKey: "", model: "", apiName: "", endpoint: "", authMethod: "bearer", customHeader: "" },
 };
-const PROVIDER_NAMES: ProviderName[] = ["gpt", "claude", "gemini"];
+const PROVIDER_NAMES: ProviderName[] = ["gpt", "claude", "gemini", "grok", "glm", "deepseek", "custom"];
 const PROVIDER_LABELS: Record<ProviderName, string> = {
-  gpt:    "GPT",
+  gpt:    "OpenAI",
   claude: "Claude",
   gemini: "Gemini",
+  grok: "Grok (xAI)",
+  glm: "GLM (Zhipu AI)",
+  deepseek: "DeepSeek",
+  custom: "Custom API",
 };
 
 function runnableProviderNames(settings: ProvidersConfig): ProviderName[] {
@@ -1397,14 +1415,16 @@ export default function App() {
 
   // Live 실행 — runSelected/runCustom에서 liveEnabled 시 호출
   async function startLiveRun(goals: string[], dm: DiscussionMode = discussionMode, depth: DiscussionDepth = discussionDepth, cm: ConsensusMode = consensusMode) {
-    const enabledWithoutKey = enabledProvidersWithoutApiKey(providerSettings);
+    const enabledWithoutKey = providerSettings.testMode ? [] : enabledProvidersWithoutApiKey(providerSettings);
     if (enabledWithoutKey.length > 0) {
       setLiveStatus(`API 키가 없는 provider가 활성화되어 있습니다: ${formatProviderNames(enabledWithoutKey)}`);
       setTimeout(() => setLiveStatus(""), 4000);
       return;
     }
 
-    const runnableCount = runnableProviderNames(providerSettings).length;
+    const runnableCount = providerSettings.testMode
+      ? PROVIDER_NAMES.filter(p => providerSettings[p].enabled).length
+      : runnableProviderNames(providerSettings).length;
     if (runnableCount < 2) {
       setLiveStatus("실시간 토론에는 API 키가 설정된 AI provider가 최소 2개 필요합니다");
       setTimeout(() => setLiveStatus(""), 4000);
@@ -1986,7 +2006,7 @@ function SettingsModal({ providerSettings, onProviderSettingsChange, running, on
   const [editing, setEditing] = useState(false);
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
 
-  async function handleTestConnection(provider: "gpt" | "claude" | "gemini") {
+  async function handleTestConnection(provider: ProviderName) {
     setTestStatus(prev => ({ ...prev, [provider]: "확인 중..." }));
     const res = await window.api.testProviderConnection(provider);
     setTestStatus(prev => ({
@@ -1995,8 +2015,7 @@ function SettingsModal({ providerSettings, onProviderSettingsChange, running, on
     }));
   }
 
-  const providerLabel = (p: "gpt" | "claude" | "gemini") =>
-    p === "gpt" ? "OpenAI" : p === "claude" ? "Claude" : "Gemini";
+  const providerLabel = (p: ProviderName) => PROVIDER_LABELS[p];
 
   return (
     <div className="settings-backdrop" onMouseDown={onClose}>
@@ -2008,15 +2027,22 @@ function SettingsModal({ providerSettings, onProviderSettingsChange, running, on
           </div>
           <button className="settings-close" onClick={onClose}>닫기</button>
         </div>
+        <label className="settings-test-mode">
+          <span><strong>Test Mode</strong><small> 실제 API를 호출하지 않고 테스트 응답을 사용합니다.</small></span>
+          <input type="checkbox" checked={providerSettings.testMode} disabled={running} onChange={e => onProviderSettingsChange({ ...providerSettings, testMode: e.target.checked })} />
+        </label>
         <div className="settings-provider-grid">
-          {(["gpt", "claude", "gemini"] as const).map(p => {
+          {PROVIDER_NAMES.map(p => {
             const cfg = providerSettings[p];
             const label = providerLabel(p);
             const models = p === "gpt"
               ? ["gpt-5-mini", "gpt-5", "gpt-4o"]
               : p === "claude"
               ? ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-8"]
-              : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
+              : p === "gemini" ? ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+              : p === "grok" ? ["grok-3-mini", "grok-3"]
+              : p === "glm" ? ["glm-4.5-flash", "glm-4.5"]
+              : p === "deepseek" ? ["deepseek-chat", "deepseek-reasoner"] : [];
 
             return (
               <section key={p} className={`settings-provider-card ${cfg.enabled ? "is-on" : "is-off"}`}>
@@ -2048,14 +2074,18 @@ function SettingsModal({ providerSettings, onProviderSettingsChange, running, on
                       disabled={running}
                       autoComplete="off"
                     />
-                    <select
+                    {p === "custom" && <input className="provider-apikey-input" placeholder="API Name" value={cfg.apiName || ""} onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, apiName: e.target.value } })} disabled={running} />}
+                    {p === "custom" && <input className="provider-apikey-input" placeholder="API Endpoint" value={cfg.endpoint || ""} onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, endpoint: e.target.value } })} disabled={running} />}
+                    {models.length ? <select
                       className="provider-model-select"
                       value={cfg.model}
                       onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, model: e.target.value } })}
                       disabled={running}
                     >
                       {models.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                    </select> : <input className="provider-apikey-input" placeholder="Model Name" value={cfg.model} onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, model: e.target.value } })} disabled={running} />}
+                    {p === "custom" && <select className="provider-model-select" value={cfg.authMethod || "bearer"} onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, authMethod: e.target.value as ProviderSettings["authMethod"] } })} disabled={running}><option value="bearer">Bearer</option><option value="api-key">API Key</option><option value="custom-header">Custom Header</option></select>}
+                    {p === "custom" && cfg.authMethod === "custom-header" && <input className="provider-apikey-input" placeholder="Header Name (e.g. X-API-Key)" value={cfg.customHeader || ""} onChange={e => onProviderSettingsChange({ ...providerSettings, [p]: { ...cfg, customHeader: e.target.value } })} disabled={running} />}
                   </div>
                 )}
                 <button

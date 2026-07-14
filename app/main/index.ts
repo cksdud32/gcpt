@@ -7,10 +7,12 @@ import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import { promises as fsp, readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { WsLinkedContext } from "../../src/workspace-providers";
-import { makeClaudeProvider, makeMockProvider } from "../../src/workspace-providers";
+import { makeWorkspaceProvider, makeMockProvider } from "../../src/workspace-providers";
 import { runMode, runCustomGoal } from "../../src/test-modes";
-import type { DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, InteractionStyle } from "../../src/types";
+import type { DiscussionMode, DiscussionDepth, ConsensusMode, ProvidersConfig, ProviderName, InteractionStyle } from "../../src/types";
 import { DEPTH_BUDGETS, DEFAULT_PROVIDER_MODELS } from "../../src/types";
+import { createDefaultProviders, PROVIDER_LABELS, PROVIDER_NAMES, getSelectedProviderConfig } from "../../src/provider-config";
+import { executeProviderRequest, normalizeApiError } from "../../src/provider-runtime";
 import { MOCK_CONFIGS } from "../../src/orchestrator";
 import { LiveOrchestrator } from "../../src/live-orchestrator";
 import { ConversationOrchestrator } from "../../src/conversation-orchestrator";
@@ -26,15 +28,20 @@ function isFirstRunCheck(): boolean {
 }
 
 function defaultProviders(): ProvidersConfig {
-  return {
-    gpt:    { enabled: !!process.env.OPENAI_API_KEY,    apiKey: process.env.OPENAI_API_KEY    ?? "", model: DEFAULT_PROVIDER_MODELS.gpt },
-    claude: { enabled: !!process.env.ANTHROPIC_API_KEY, apiKey: process.env.ANTHROPIC_API_KEY ?? "", model: DEFAULT_PROVIDER_MODELS.claude },
-    gemini: { enabled: !!process.env.GEMINI_API_KEY,    apiKey: process.env.GEMINI_API_KEY    ?? "", model: DEFAULT_PROVIDER_MODELS.gemini },
-  };
+  const settings = createDefaultProviders();
+  settings.gpt = { ...settings.gpt, enabled: !!process.env.OPENAI_API_KEY, apiKey: process.env.OPENAI_API_KEY ?? "" };
+  settings.claude = { ...settings.claude, enabled: !!process.env.ANTHROPIC_API_KEY, apiKey: process.env.ANTHROPIC_API_KEY ?? "" };
+  settings.gemini = { ...settings.gemini, enabled: !!process.env.GEMINI_API_KEY, apiKey: process.env.GEMINI_API_KEY ?? "" };
+  return settings;
 }
 
 function sanitizeSecretText(value: unknown): string {
-  return String(value ?? "").replace(/sk-[A-Za-z0-9_-]+/g, "API_KEY");
+  let safe = String(value ?? "").replace(/sk-[A-Za-z0-9_-]+/g, "API_KEY");
+  for (const name of PROVIDER_NAMES) {
+    const key = currentProviders?.[name]?.apiKey;
+    if (key && key.length >= 6) safe = safe.split(key).join("API_KEY");
+  }
+  return safe;
 }
 
 function loadProviderSettings(): ProvidersConfig {
@@ -45,11 +52,9 @@ function loadProviderSettings(): ProvidersConfig {
     const parsed = JSON.parse(raw) as ProvidersConfig;
     // 필드 유효성 검증 — 누락된 필드는 기본값으로 보완
     const defaults = defaultProviders();
-    return {
-      gpt:    { ...defaults.gpt,    ...parsed.gpt },
-      claude: { ...defaults.claude, ...parsed.claude },
-      gemini: { ...defaults.gemini, ...parsed.gemini },
-    };
+    for (const name of PROVIDER_NAMES) defaults[name] = { ...defaults[name], ...parsed[name] };
+    defaults.testMode = !!parsed.testMode;
+    return defaults;
   } catch {
     return defaultProviders();
   }
@@ -68,13 +73,7 @@ let currentProviders: ProvidersConfig = defaultProviders();
 
 let mainWindow: BrowserWindow | null = null;
 
-type ProviderName = keyof ProvidersConfig;
-const LIVE_PROVIDER_NAMES: ProviderName[] = ["gpt", "claude", "gemini"];
-const LIVE_PROVIDER_LABELS: Record<ProviderName, string> = {
-  gpt:    "GPT",
-  claude: "Claude",
-  gemini: "Gemini",
-};
+const LIVE_PROVIDER_NAMES: ProviderName[] = PROVIDER_NAMES;
 
 function getEnabledProvidersWithoutApiKey(settings: ProvidersConfig): ProviderName[] {
   return LIVE_PROVIDER_NAMES.filter(p => settings[p].enabled && !settings[p].apiKey.trim());
@@ -85,7 +84,7 @@ function getRunnableLiveProviders(settings: ProvidersConfig): ProviderName[] {
 }
 
 function formatProviderList(providers: ProviderName[]): string {
-  return providers.map(p => LIVE_PROVIDER_LABELS[p]).join(", ");
+  return providers.map(p => PROVIDER_LABELS[p]).join(", ");
 }
 
 // webContents.send 안전 래퍼 — 창이 닫힌 후 orphan 이벤트가 도달해도 crash 방지
@@ -142,11 +141,10 @@ ipcMain.handle("provider:getSettings", () => currentProviders);
 
 ipcMain.handle("provider:saveSettings", (_event, settings: ProvidersConfig) => {
   try {
-    currentProviders = {
-      gpt:    { enabled: !!settings.gpt?.enabled,    apiKey: settings.gpt?.apiKey    ?? "", model: settings.gpt?.model    || DEFAULT_PROVIDER_MODELS.gpt },
-      claude: { enabled: !!settings.claude?.enabled, apiKey: settings.claude?.apiKey ?? "", model: settings.claude?.model || DEFAULT_PROVIDER_MODELS.claude },
-      gemini: { enabled: !!settings.gemini?.enabled, apiKey: settings.gemini?.apiKey ?? "", model: settings.gemini?.model || DEFAULT_PROVIDER_MODELS.gemini },
-    };
+    const next = createDefaultProviders();
+    next.testMode = !!settings.testMode;
+    for (const name of PROVIDER_NAMES) next[name] = { ...next[name], ...settings[name], enabled: !!settings[name]?.enabled, apiKey: settings[name]?.apiKey ?? "", model: settings[name]?.model ?? "" };
+    currentProviders = next;
     persistProviderSettings(currentProviders);
     return { ok: true };
   } catch (e) {
@@ -154,38 +152,14 @@ ipcMain.handle("provider:saveSettings", (_event, settings: ProvidersConfig) => {
   }
 });
 
-ipcMain.handle("provider:testConnection", async (_event, provider: "gpt" | "claude" | "gemini") => {
+ipcMain.handle("provider:testConnection", async (_event, provider: ProviderName) => {
   const cfg = currentProviders[provider];
-  if (!cfg.apiKey) return { ok: false, error: "API key 없음" };
-
   const t0 = Date.now();
   try {
-    if (provider === "gpt") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const OpenAI = require("openai").default ?? require("openai");
-      const client = new OpenAI({ apiKey: cfg.apiKey });
-      await client.chat.completions.create({ model: cfg.model || "gpt-5-mini", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
-    } else if (provider === "claude") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const Anthropic = require("@anthropic-ai/sdk").default ?? require("@anthropic-ai/sdk");
-      const client = new Anthropic({ apiKey: cfg.apiKey });
-      await client.messages.create({ model: cfg.model || "claude-haiku-4-5-20251001", max_tokens: 5, messages: [{ role: "user", content: "hi" }] });
-    } else {
-      // Gemini: 간단한 fetch 테스트
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model || "gemini-2.5-flash"}:generateContent?key=${cfg.apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 5 } }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return { ok: false, error: sanitizeSecretText(`HTTP ${res.status}: ${body.slice(0, 100)}`) };
-      }
-    }
+    await executeProviderRequest({ provider, config: cfg, prompt: "connection test", testMode: currentProviders.testMode, maxTokens: 5, messages: [{ role: "user", content: "hi" }] });
     return { ok: true, latency: Date.now() - t0 };
   } catch (e) {
-    return { ok: false, error: sanitizeSecretText(e instanceof Error ? e.message.slice(0, 120) : String(e)) };
+    return { ok: false, error: sanitizeSecretText(normalizeApiError(e).message) };
   }
 });
 
@@ -358,14 +332,17 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
 }) => {
   const { goals, mode: discussionMode = "general", depth = "structural_convergence", consensusMode = "auto", safetyLimitEnabled, interactionStyle = "debate" } = payload;
 
-  const enabledWithoutKey = getEnabledProvidersWithoutApiKey(currentProviders);
+  if (!goals.some(goal => goal.trim())) return { ok: false, error: "프롬프트를 입력해 주세요." };
+  const enabledWithoutKey = currentProviders.testMode ? [] : getEnabledProvidersWithoutApiKey(currentProviders);
   if (enabledWithoutKey.length > 0) {
     console.warn("[main] discussion blocked — enabled providers missing API keys:", enabledWithoutKey);
     return { ok: false, error: `API 키가 없는 provider가 활성화되어 있습니다: ${formatProviderList(enabledWithoutKey)}` };
   }
 
   // 활성화 + API 키 보유 provider가 2개 미만이면 실행 차단
-  const runnableProviders = getRunnableLiveProviders(currentProviders);
+  const runnableProviders = currentProviders.testMode
+    ? LIVE_PROVIDER_NAMES.filter(name => currentProviders[name].enabled)
+    : getRunnableLiveProviders(currentProviders);
   if (runnableProviders.length < 2) {
     console.warn("[main] discussion blocked — not enough runnable providers:", runnableProviders);
     return { ok: false, error: "실시간 토론에는 API 키가 설정된 AI provider가 최소 2개 필요합니다" };
@@ -378,11 +355,7 @@ ipcMain.handle("start-live-discussion", (_event, payload: {
   conversationOrchestrator = null;
 
   // 시작 시점의 provider 설정 스냅샷
-  const snapshotProviders = {
-    gpt:    { ...currentProviders.gpt },
-    claude: { ...currentProviders.claude },
-    gemini: { ...currentProviders.gemini },
-  };
+  const snapshotProviders: ProvidersConfig = structuredClone(currentProviders);
   console.log("[main] START LIVE DISCUSSION  goals=", goals, "style=", interactionStyle, "mode=", discussionMode);
 
   // ── Conversation Mode ────────────────────────────────────────────
@@ -516,29 +489,18 @@ ipcMain.handle("workspace:chat", async (_event, payload: {
   messages:     { role: "user" | "assistant"; content: string }[];
   linkedTopic?: WsLinkedContext;
 }) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
   const mock   = makeMockProvider();
-
-  // No API key → immediate mock
-  if (!apiKey) {
+  const selected = getSelectedProviderConfig(currentProviders);
+  if (!selected) {
     const content = await mock.send(payload.messages, payload.linkedTopic);
     return { ok: true, content, provider: mock.name, fallbackReason: "missing_api_key" } as const;
   }
-
-  // Try Claude, fallback to mock on any error
-  const claude = makeClaudeProvider(apiKey);
+  const active = makeWorkspaceProvider(selected.provider, selected.config, currentProviders.testMode);
   try {
-    const content = await claude.send(payload.messages, payload.linkedTopic);
-    return { ok: true, content, provider: claude.name } as const;
+    const content = await active.send(payload.messages, payload.linkedTopic);
+    return { ok: true, content, provider: active.name } as const;
   } catch (err) {
-    console.warn("[workspace:chat] Claude failed, falling back to mock:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
-    try {
-      const content = await mock.send(payload.messages, payload.linkedTopic);
-      return { ok: true, content, provider: mock.name, fallbackReason: "provider_error" } as const;
-    } catch (mockErr) {
-      const msg = sanitizeSecretText(mockErr instanceof Error ? mockErr.message : String(mockErr));
-      return { ok: false, error: msg } as const;
-    }
+    return { ok: false, error: sanitizeSecretText(normalizeApiError(err).message) } as const;
   }
 });
 
@@ -547,21 +509,18 @@ ipcMain.handle("workspace:chat", async (_event, payload: {
 ipcMain.handle("workspace:generate-plan", async (_event, payload: {
   linkedTopic?: WsLinkedContext;
 }) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
   const mock   = makeMockProvider();
-
-  if (!apiKey) {
+  const selected = getSelectedProviderConfig(currentProviders);
+  if (!selected) {
     const plan = await mock.generatePlan(payload.linkedTopic);
     return { ok: true, plan, provider: mock.name, fallbackReason: "missing_api_key" } as const;
   }
 
-  const claude = makeClaudeProvider(apiKey);
+  const active = makeWorkspaceProvider(selected.provider, selected.config, currentProviders.testMode);
   try {
-    const plan = await claude.generatePlan(payload.linkedTopic);
-    return { ok: true, plan, provider: claude.name } as const;
+    const plan = await active.generatePlan(payload.linkedTopic);
+    return { ok: true, plan, provider: active.name } as const;
   } catch (err) {
-    console.warn("[workspace:generate-plan] Claude failed, falling back to mock:", sanitizeSecretText(err instanceof Error ? err.message : String(err)));
-    const plan = await mock.generatePlan(payload.linkedTopic);
-    return { ok: true, plan, provider: mock.name, fallbackReason: "provider_error" } as const;
+    return { ok: false, error: sanitizeSecretText(normalizeApiError(err).message) } as const;
   }
 });
